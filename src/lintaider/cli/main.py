@@ -5,7 +5,6 @@ from pathlib import Path
 
 import click
 
-from lintaider.cli.fix_handler import handle_fix
 from lintaider.cli.init_handler import handle_init
 from lintaider.cli.scan_handler import handle_scan
 from lintaider.cli.ui import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
@@ -13,12 +12,12 @@ from lintaider.cli.ui import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
 
 @click.group()
 def main() -> None:
-    """AI-powered code reviewer and auto-fixer."""
+    """Linting orchestrator for Python projects."""
 
 
 @main.command()
 def init() -> None:  # vulture: ignore
-    """Initialize configuration for LintAIder."""
+    """Initialize linter defaults for LintAIder."""
     handle_init()
 
 
@@ -72,38 +71,6 @@ def scan(  # vulture: ignore
             verbose,
             human_readable,
         ),
-    )
-
-
-@main.command()
-@click.argument(
-    "target", type=click.Path(exists=True, path_type=Path), required=False
-)
-@click.option(
-    "-i",
-    "--input",
-    "input_file",
-    type=click.Path(path_type=Path),
-    default=None,
-    help=f"Path to the scan results JSON file (default: {SCAN_RESULT_FILE})",
-)
-def fix(  # vulture: ignore
-    target: Path | None,
-    input_file: Path | None,
-) -> None:
-    """Read scan results and interactively apply AI-suggested fixes.
-
-    TARGET: (Optional) If the results file is missing, the tool will
-    automatically scan this path before suggesting fixes.
-    """
-    if not target and not input_file and not SCAN_RESULT_FILE.exists():
-        raise click.UsageError(
-            "Nothing to fix! Please provide a [TARGET] to scan or an "
-            f"--input file. (Default file '{SCAN_RESULT_FILE}' not found)."
-        )
-
-    asyncio.run(
-        handle_fix(input_file or SCAN_RESULT_FILE, target),
     )
 
 

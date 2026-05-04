@@ -1,6 +1,6 @@
 # LintAIder
 
-LintAIder is a CLI tool for improving the code quality of Python projects. It runs multiple linters concurrently, aggregates findings into a unified format, passes them to an AI model for analysis and lets you apply AI-generated fixes interactively.
+LintAIder is a CLI tool for improving Python code quality. It runs multiple linters concurrently and aggregates findings into a single JSON report.
 
 ## Requirements
 
@@ -46,26 +46,6 @@ Save results to a custom file:
 uv run lintaider scan src/ -o my-scan.json
 ```
 
-### 3. Fix Linting Findings
-
-Use existing scan results (`scan-result.json` by default):
-
-```bash
-uv run lintaider fix
-```
-
-Provide a specific results file:
-
-```bash
-uv run lintaider fix --input my-scan.json
-```
-
-Scan and then fix in one command:
-
-```bash
-uv run lintaider fix src/
-```
-
 ## Linter Filtering
 
 Run only selected linters:
@@ -99,7 +79,7 @@ You can also set default `only_linters` and `skip_linters` values in
 
 ## Configuration File
 
-The `lintaider.toml` file (created by `lintaider init`) controls AI provider and linter defaults.
+The `lintaider.toml` file (created by `lintaider init`) controls linter defaults.
 
 ## Development
 

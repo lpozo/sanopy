@@ -1,4 +1,4 @@
-"""Data models for the code reviewer."""
+"""Data models for linting results."""
 
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -19,7 +19,7 @@ class LinterResult:
         linter_name: Name of the linter that produced the error.
         error_code: The specific error code from the linter.
         message: The descriptive error message.
-        snippet_context: The code surrounding the error, for AI context.
+        snippet_context: The code surrounding the error for local reporting.
     """
 
     file_path: Path

@@ -26,7 +26,7 @@ class SymbolInfo:
 
 @dataclass
 class ProjectSummary:
-    """Compact summary of a target project for AI context.
+    """Compact summary of a target project.
 
     Attributes:
         file_tree: Relative path strings for discovered Python files.
@@ -221,7 +221,7 @@ class SourceAnalyzer:
 
 
 class ProjectScanner:
-    """Scans projects to generate AI context summaries."""
+    """Scans projects to generate compact context summaries."""
 
     @staticmethod
     def scan_project(target_path: Path) -> ProjectSummary:

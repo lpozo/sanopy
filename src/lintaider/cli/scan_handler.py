@@ -220,10 +220,10 @@ class ScanReporter:
         return "\n".join(lines)
 
     def print_fix_hint(self) -> None:
-        """Print the next-step hint for AI-assisted fixing."""
+        """Print the next-step hint after a scan."""
         console.print(
-            "[dim]Run 'lintaider fix' to get AI suggestions "
-            "and apply patches.[/dim]"
+            "[dim]Use the JSON report to review findings or feed other "
+            "automation.[/dim]"
         )
 
     def write_summary_report(self, *, verbose: bool = False) -> None:
