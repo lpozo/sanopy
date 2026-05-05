@@ -7,12 +7,12 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from lintaider.linters.config_discovery import (
+from sanopy.linters.config_discovery import (
     find_nearest_local_config,
     get_bundled_config_path,
     is_test_path,
 )
-from lintaider.linters.result import LinterResult
+from sanopy.linters.result import LinterResult
 
 
 @dataclass  # pylint: disable=too-few-public-methods

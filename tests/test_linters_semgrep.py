@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters.base import AsyncCompletedProcess
-from lintaider.linters.semgrep import SemgrepLinter
+from sanopy.linters.base import AsyncCompletedProcess
+from sanopy.linters.semgrep import SemgrepLinter
 
 
 @pytest.fixture(autouse=True)
 def _mock_get_context(mocker):
     """Mock get_linter_context to return dummy values."""
     return mocker.patch(
-        "lintaider.linters.semgrep.get_linter_context",
+        "sanopy.linters.semgrep.get_linter_context",
         return_value=("snippet", 1, "context"),
     )
 

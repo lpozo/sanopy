@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters.context import (
+from sanopy.linters.context import (
     ProjectScanner,
     SnippetProvider,
     SourceAnalyzer,

@@ -1,1 +1,1 @@
-"""Test suite for the lintaider package."""
+"""Test suite for the sanopy package."""

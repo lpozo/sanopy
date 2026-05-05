@@ -1,11 +1,11 @@
-"""Configuration management for LintAIder."""
+"""Configuration management for Sanopy."""
 
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-DEFAULT_CONFIG_PATH = Path("lintaider.toml")
+DEFAULT_CONFIG_PATH = Path("sanopy.toml")
 
 
 @dataclass
@@ -20,7 +20,7 @@ class Config:
         """Load configuration from a TOML file and environment variables.
 
         Args:
-            path: Path to the configuration file. Defaults to lintaider.toml.
+            path: Path to the configuration file. Defaults to sanopy.toml.
 
         Returns:
             A Config instance.
@@ -63,7 +63,7 @@ class Config:
         """Normalise and persist the current configuration to a TOML file.
 
         Args:
-            path: Destination path. Defaults to ``lintaider.toml`` in the
+            path: Destination path. Defaults to ``sanopy.toml`` in the
                 current working directory.
         """
         self._normalize()

@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters.result import LinterResult
+from sanopy.linters.result import LinterResult
 
 
 def test_linter_result_creation() -> None:

@@ -3,9 +3,9 @@
 import click
 from rich.panel import Panel
 
-from lintaider.cli.ui import console
-from lintaider.config import Config
-from lintaider.linters import LINTER_MAP
+from sanopy.cli.ui import console
+from sanopy.config import Config
+from sanopy.linters import LINTER_MAP
 
 
 def handle_init() -> None:
@@ -13,7 +13,7 @@ def handle_init() -> None:
     config = Config.load()
     builder = ConfigBuilder(config)
 
-    console.print("[bold]LintAIder Setup Wizard[/bold]\n")
+    console.print("[bold]Sanopy Setup Wizard[/bold]\n")
 
     builder.select_linter_preferences()
     builder.print_summary()
@@ -41,7 +41,7 @@ def handle_init() -> None:
         Panel(
             f"Skip Linters: [bold]{skip_str}[/bold]\n"
             f"Only Linters: [bold]{only_str}[/bold]",
-            title="Configuration Saved to lintaider.toml",
+            title="Configuration Saved to sanopy.toml",
             border_style="green",
         )
     )

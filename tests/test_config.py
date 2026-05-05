@@ -1,6 +1,6 @@
 """Tests for the configuraton system."""
 
-from lintaider.config import Config
+from sanopy.config import Config
 
 
 def test_config_default() -> None:
@@ -12,7 +12,7 @@ def test_config_default() -> None:
 
 def test_config_save_load(tmp_path) -> None:
     """Test saving and loading configuration from TOML."""
-    config_file = tmp_path / "lintaider.toml"
+    config_file = tmp_path / "sanopy.toml"
     config = Config(only_linters=["ruff"], skip_linters=["bandit"])
     config.save(config_file)
 

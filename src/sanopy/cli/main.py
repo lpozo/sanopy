@@ -1,13 +1,13 @@
-"""Main entry point for the LintAIder CLI package."""
+"""Main entry point for the Sanopy CLI package."""
 
 import asyncio
 from pathlib import Path
 
 import click
 
-from lintaider.cli.init_handler import handle_init
-from lintaider.cli.scan_handler import handle_scan
-from lintaider.cli.ui import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
+from sanopy.cli.init_handler import handle_init
+from sanopy.cli.scan_handler import handle_scan
+from sanopy.cli.ui import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
 
 
 @click.group()
@@ -17,7 +17,7 @@ def main() -> None:
 
 @main.command()
 def init() -> None:  # vulture: ignore
-    """Initialize linter defaults for LintAIder."""
+    """Initialize linter defaults for Sanopy."""
     handle_init()
 
 

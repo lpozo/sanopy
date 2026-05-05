@@ -14,11 +14,11 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from lintaider.cli.ui import HUMAN_READABLE_REPORT_FILE
-from lintaider.cli.ui import console as console
-from lintaider.config import Config
-from lintaider.linters import LINTER_MAP, Engine
-from lintaider.linters.result import LinterResult
+from sanopy.cli.ui import HUMAN_READABLE_REPORT_FILE
+from sanopy.cli.ui import console as console
+from sanopy.config import Config
+from sanopy.linters import LINTER_MAP, Engine
+from sanopy.linters.result import LinterResult
 
 
 async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional-arguments

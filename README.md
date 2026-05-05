@@ -1,6 +1,6 @@
-# LintAIder
+# Sanopy
 
-LintAIder is a CLI tool for improving Python code quality. It runs multiple linters concurrently and aggregates findings into a single JSON report.
+Sanopy is a CLI tool for improving Python code quality. It runs multiple linters concurrently and aggregates findings into a single JSON report.
 
 ## Requirements
 
@@ -11,7 +11,7 @@ LintAIder is a CLI tool for improving Python code quality. It runs multiple lint
 
 ```bash
 uv venv .venv
-uv add lintaider
+uv add sanopy
 ```
 
 ## Quick Start
@@ -19,31 +19,31 @@ uv add lintaider
 ### 1. Initialize
 
 ```bash
-uv run lintaider init
+uv run sanopy init
 ```
 
 ### 2. Scan a Codebase
 
 ```bash
-uv run lintaider scan src/
+uv run sanopy scan src/
 ```
 
 Verbose output that prints every finding with code context:
 
 ```bash
-uv run lintaider scan src/ -v
+uv run sanopy scan src/ -v
 ```
 
 Generate a human-readable Markdown report:
 
 ```bash
-uv run lintaider scan src/ --human-readable
+uv run sanopy scan src/ --human-readable
 ```
 
 Save results to a custom file:
 
 ```bash
-uv run lintaider scan src/ -o my-scan.json
+uv run sanopy scan src/ -o my-scan.json
 ```
 
 ## Linter Filtering
@@ -51,17 +51,17 @@ uv run lintaider scan src/ -o my-scan.json
 Run only selected linters:
 
 ```bash
-uv run lintaider scan . --only ruff,mypy
+uv run sanopy scan . --only ruff,mypy
 ```
 
 Skip selected linters:
 
 ```bash
-uv run lintaider scan . --skip safety
+uv run sanopy scan . --skip safety
 ```
 
 You can also set default `only_linters` and `skip_linters` values in
-`lintaider.toml` via `uv run lintaider init`.
+`sanopy.toml` via `uv run sanopy init`.
 
 ## Supported Linters
 
@@ -79,15 +79,15 @@ You can also set default `only_linters` and `skip_linters` values in
 
 ## Configuration File
 
-The `lintaider.toml` file (created by `lintaider init`) controls linter defaults.
+The `sanopy.toml` file (created by `sanopy init`) controls linter defaults.
 
 ## Development
 
 Clone the repo and install dependencies:
 
 ```bash
-git clone https://github.com/lpozo/lintaider.git
-cd lintaider
+git clone https://github.com/lpozo/sanopy.git
+cd sanopy
 uv sync
 ```
 

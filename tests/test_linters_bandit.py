@@ -5,15 +5,15 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters.bandit import BanditLinter
-from lintaider.linters.base import AsyncCompletedProcess
+from sanopy.linters.bandit import BanditLinter
+from sanopy.linters.base import AsyncCompletedProcess
 
 
 @pytest.fixture(autouse=True)
 def _mock_get_context(mocker):
     """Mock get_linter_context to return dummy values."""
     return mocker.patch(
-        "lintaider.linters.bandit.get_linter_context",
+        "sanopy.linters.bandit.get_linter_context",
         return_value=("snippet", 1, "context"),
     )
 

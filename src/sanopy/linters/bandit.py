@@ -1,44 +1,47 @@
-"""Linter implementation for Ruff."""
+"""Bandit linter implementation."""
 
 import json
 from pathlib import Path
 
-from lintaider.linters.base import AsyncCompletedProcess, BaseLinter
-from lintaider.linters.context import get_linter_context
-from lintaider.linters.result import LinterResult
+from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
+from sanopy.linters.context import get_linter_context
+from sanopy.linters.result import LinterResult
 
 
-class RuffLinter(BaseLinter):
-    """Linter implementation for Ruff."""
+class BanditLinter(BaseLinter):
+    """Linter implementation for Bandit (Security scanner)."""
 
-    name = "Ruff"
+    name = "Bandit"
 
     def build_command(self, target: Path) -> list[str]:
-        """Build the Ruff command for the target path.
+        """Build the Bandit command for the target path.
 
         Args:
             target: The file or directory to scan.
 
         Returns:
-            A list of command arguments including output format and config.
+            A list of command arguments including format flags and config.
         """
+        target_str = str(target.absolute())
+        args = ["-r", target_str] if target.is_dir() else [target_str]
+
         # Get effective config (nearest local or bundled default)
         config_file = self._get_effective_config_path(
-            target, ["pyproject.toml", "ruff.toml", ".ruff.toml"]
+            target, ["bandit.yaml", ".bandit", "pyproject.toml"]
         )
 
-        cmd = ["ruff", "check", "--output-format=json"]
+        cmd = ["bandit", "-f", "json"]
         if config_file:
-            cmd += ["--config", str(config_file.absolute())]
+            cmd += ["-c", str(config_file.absolute())]
 
-        return cmd + [str(target.absolute())]
+        return cmd + args
 
     def parse_output(
         self,
         process_result: AsyncCompletedProcess,
         target: Path,
     ) -> list[LinterResult]:
-        """Parse Ruff JSON output.
+        """Parse Bandit JSON output.
 
         Args:
             process_result: The completed process result.
@@ -47,24 +50,25 @@ class RuffLinter(BaseLinter):
         Returns:
             A list of standardized linter results.
         """
-        # pylint: disable=too-many-locals
 
         try:
-            errors = json.loads(process_result.stdout)
+            output = json.loads(process_result.stdout)
+            errors = output.get("results", [])
         except json.JSONDecodeError:
             return []
 
         parsed_results = []
         for error in errors:
-            file_path = Path(error.get("filename", ""))
+            file_path = Path(error.get("filename", target.name))
 
-            line_start = error.get("location", {}).get("row", 1)
-            col_start = error.get("location", {}).get("column", 1)
-            line_end = error.get("end_location", {}).get("row")
-            col_end = error.get("end_location", {}).get("column")
+            line_start = error.get("line_number", 1)
+            line_range = error.get("line_range", [])
+            line_end = max(line_range) if line_range else line_start
 
-            error_code = error.get("code", "Unknown")
-            message = error.get("message", "Unknown error")
+            error_code = error.get("test_id", "Unknown")
+            issue_text = error.get("issue_text", "Unknown security issue")
+            severity = error.get("issue_severity", "LOW")
+            message = f"[{severity}] {issue_text}"
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
@@ -78,8 +82,8 @@ class RuffLinter(BaseLinter):
                     file_path=file_path,
                     line_start=line_start,
                     line_end=line_end,
-                    col_start=col_start,
-                    col_end=col_end,
+                    col_start=None,
+                    col_end=None,
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,

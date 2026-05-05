@@ -1,5 +1,5 @@
 [project]
-name = "lintaider"
+name = "sanopy"
 version = "0.1.0"
 description = "A CLI tool for improving the code quality of Python projects."
 readme = "README.md"
@@ -32,9 +32,9 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/lpozo/lintaider"
-Repository = "https://github.com/lpozo/lintaider.git"
-Issues = "https://github.com/lpozo/lintaider/issues"
+Homepage = "https://github.com/lpozo/sanopy"
+Repository = "https://github.com/lpozo/sanopy.git"
+Issues = "https://github.com/lpozo/sanopy/issues"
 
 [dependency-groups]
 dev = [
@@ -50,7 +50,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project.scripts]
-lintaider = "lintaider.cli:main"
+sanopy = "sanopy.cli:main"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

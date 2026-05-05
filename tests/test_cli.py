@@ -1,4 +1,4 @@
-"""Tests for the LintAIder CLI interface."""
+"""Tests for the Sanopy CLI interface."""
 # pylint: disable=redefined-outer-name
 
 from unittest.mock import AsyncMock
@@ -6,16 +6,16 @@ from unittest.mock import AsyncMock
 import pytest
 from click.testing import CliRunner
 
-from lintaider.cli import main
-from lintaider.config import Config
-from lintaider.linters.result import LinterResult
+from sanopy.cli import main
+from sanopy.config import Config
+from sanopy.linters.result import LinterResult
 
 
 @pytest.fixture(autouse=True)
 def _mock_scan_config(mocker):
     """Fixture to mock scan config loading with defaults."""
     return mocker.patch(
-        "lintaider.cli.scan_handler.Config.load", return_value=Config()
+        "sanopy.cli.scan_handler.Config.load", return_value=Config()
     )
 
 
@@ -26,7 +26,7 @@ def test_cli_scan_no_issues(mocker, tmp_path) -> None:
     test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
 
     mocker.patch(
-        "lintaider.cli.scan_handler.Engine.run_all",
+        "sanopy.cli.scan_handler.Engine.run_all",
         new_callable=AsyncMock,
         return_value=[],
     )
@@ -57,7 +57,7 @@ def test_cli_scan_with_issues(mocker, tmp_path) -> None:
     )
 
     mocker.patch(
-        "lintaider.cli.scan_handler.Engine.run_all",
+        "sanopy.cli.scan_handler.Engine.run_all",
         new_callable=AsyncMock,
         return_value=[fake_result],
     )
@@ -99,7 +99,7 @@ def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
     )
 
     mocker.patch(
-        "lintaider.cli.scan_handler.Engine.run_all",
+        "sanopy.cli.scan_handler.Engine.run_all",
         new_callable=AsyncMock,
         return_value=[fake_result],
     )
@@ -141,7 +141,7 @@ def test_cli_scan_human_readable_short_flag(mocker, tmp_path) -> None:
     test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
 
     mocker.patch(
-        "lintaider.cli.scan_handler.Engine.run_all",
+        "sanopy.cli.scan_handler.Engine.run_all",
         new_callable=AsyncMock,
         return_value=[],
     )
@@ -176,7 +176,7 @@ def test_cli_scan_verbose(mocker, tmp_path) -> None:
     )
 
     mocker.patch(
-        "lintaider.cli.scan_handler.Engine.run_all",
+        "sanopy.cli.scan_handler.Engine.run_all",
         new_callable=AsyncMock,
         return_value=[fake_result],
     )
@@ -200,7 +200,7 @@ def test_cli_scan_only_filter(mocker, tmp_path) -> None:
     test_file = tmp_path / "valid.py"
     test_file.write_text("print(1)\n", encoding="utf-8")
 
-    mock_engine = mocker.patch("lintaider.cli.scan_handler.Engine")
+    mock_engine = mocker.patch("sanopy.cli.scan_handler.Engine")
 
     runner.invoke(main, ["scan", str(test_file), "--only", "ruff"])
 
@@ -216,7 +216,7 @@ def test_cli_scan_skip_filter(mocker, tmp_path) -> None:
     test_file = tmp_path / "valid.py"
     test_file.write_text("print(1)\n", encoding="utf-8")
 
-    mock_engine = mocker.patch("lintaider.cli.scan_handler.Engine")
+    mock_engine = mocker.patch("sanopy.cli.scan_handler.Engine")
 
     runner.invoke(
         main,
@@ -239,18 +239,18 @@ def test_cli_scan_skip_filter(mocker, tmp_path) -> None:
 
 def test_cli_init_command(mocker) -> None:
     """Test linter-only init command flow."""
-    from lintaider.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigBuilder
 
     runner = CliRunner()
     config = Config()
 
-    mocker.patch("lintaider.cli.init_handler.Config.load", return_value=config)
+    mocker.patch("sanopy.cli.init_handler.Config.load", return_value=config)
     mocker.patch.object(Config, "save")
     mocker.patch(
-        "lintaider.cli.init_handler.click.prompt",
+        "sanopy.cli.init_handler.click.prompt",
         side_effect=["ruff", "mypy"],
     )
-    mocker.patch("lintaider.cli.init_handler.click.confirm", return_value=True)
+    mocker.patch("sanopy.cli.init_handler.click.confirm", return_value=True)
 
     result = runner.invoke(main, ["init"])
 
@@ -263,13 +263,13 @@ def test_cli_init_command(mocker) -> None:
 
 def test_init_helper_select_linter_preferences(mocker) -> None:
     """Test linter preference selection with validation."""
-    from lintaider.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigBuilder
 
     config = Config(skip_linters=["ruff"], only_linters=[])
     builder = ConfigBuilder(config)
 
     mocker.patch(
-        "lintaider.cli.init_handler.click.prompt",
+        "sanopy.cli.init_handler.click.prompt",
         side_effect=["pylint", "bandit"],
     )
 
@@ -281,13 +281,13 @@ def test_init_helper_select_linter_preferences(mocker) -> None:
 
 def test_init_helper_select_linter_preferences_invalid(mocker) -> None:
     """Test that invalid linter names are handled gracefully via public API."""
-    from lintaider.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigBuilder
 
     config = Config()
     builder = ConfigBuilder(config)
 
     mocker.patch(
-        "lintaider.cli.init_handler.click.prompt",
+        "sanopy.cli.init_handler.click.prompt",
         side_effect=["ruff,invalid_linter", ""],
     )
 
@@ -298,13 +298,13 @@ def test_init_helper_select_linter_preferences_invalid(mocker) -> None:
 
 def test_init_helper_select_linter_preferences_overlap(mocker) -> None:
     """Test overlap removal between skip and only linters."""
-    from lintaider.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigBuilder
 
     config = Config()
     builder = ConfigBuilder(config)
 
     mocker.patch(
-        "lintaider.cli.init_handler.click.prompt",
+        "sanopy.cli.init_handler.click.prompt",
         side_effect=["ruff,pylint", "pylint,bandit"],
     )
 
@@ -333,7 +333,7 @@ def test_scan_reporter_write_json_report(tmp_path, fake_result) -> None:
     """write_json_report saves results as valid JSON to the output path."""
     import json
 
-    from lintaider.cli.scan_handler import ScanReporter
+    from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
     reporter = ScanReporter([fake_result], tmp_path, output)
@@ -352,7 +352,7 @@ def test_scan_reporter_write_human_readable_report(
     import os
     from pathlib import Path
 
-    from lintaider.cli.scan_handler import ScanReporter
+    from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
     reporter = ScanReporter([fake_result], tmp_path, output)
@@ -375,7 +375,7 @@ def test_scan_reporter_write_human_readable_report(
 
 def test_scan_reporter_write_summary_report(tmp_path, fake_result) -> None:
     """write_summary_report prints the findings table."""
-    from lintaider.cli.scan_handler import ScanReporter
+    from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
     reporter = ScanReporter([fake_result], tmp_path, output)

@@ -4,8 +4,8 @@ import asyncio
 from collections.abc import Callable
 from pathlib import Path
 
-from lintaider.linters.base import BaseLinter
-from lintaider.linters.result import LinterResult
+from sanopy.linters.base import BaseLinter
+from sanopy.linters.result import LinterResult
 
 
 class Engine:

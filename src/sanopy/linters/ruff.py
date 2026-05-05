@@ -1,20 +1,20 @@
-"""Pylint linter implementation."""
+"""Linter implementation for Ruff."""
 
 import json
 from pathlib import Path
 
-from lintaider.linters.base import AsyncCompletedProcess, BaseLinter
-from lintaider.linters.context import get_linter_context
-from lintaider.linters.result import LinterResult
+from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
+from sanopy.linters.context import get_linter_context
+from sanopy.linters.result import LinterResult
 
 
-class PylintLinter(BaseLinter):
-    """Linter implementation for Pylint."""
+class RuffLinter(BaseLinter):
+    """Linter implementation for Ruff."""
 
-    name = "Pylint"
+    name = "Ruff"
 
     def build_command(self, target: Path) -> list[str]:
-        """Build the Pylint command for the target path.
+        """Build the Ruff command for the target path.
 
         Args:
             target: The file or directory to scan.
@@ -24,14 +24,12 @@ class PylintLinter(BaseLinter):
         """
         # Get effective config (nearest local or bundled default)
         config_file = self._get_effective_config_path(
-            target, [".pylintrc", "pylintrc", "pyproject.toml"]
+            target, ["pyproject.toml", "ruff.toml", ".ruff.toml"]
         )
 
-        cmd = ["pylint", "--output-format=json"]
+        cmd = ["ruff", "check", "--output-format=json"]
         if config_file:
-            # If it's pyproject.toml, it might need different handling,
-            # but usually Pylint finds it or we pass it via --rcfile.
-            cmd += [f"--rcfile={config_file.absolute()}"]
+            cmd += ["--config", str(config_file.absolute())]
 
         return cmd + [str(target.absolute())]
 
@@ -40,7 +38,7 @@ class PylintLinter(BaseLinter):
         process_result: AsyncCompletedProcess,
         target: Path,
     ) -> list[LinterResult]:
-        """Parse Pylint JSON output.
+        """Parse Ruff JSON output.
 
         Args:
             process_result: The completed process result.
@@ -49,6 +47,7 @@ class PylintLinter(BaseLinter):
         Returns:
             A list of standardized linter results.
         """
+        # pylint: disable=too-many-locals
 
         try:
             errors = json.loads(process_result.stdout)
@@ -57,16 +56,14 @@ class PylintLinter(BaseLinter):
 
         parsed_results = []
         for error in errors:
-            file_path = Path(error.get("path", target.name))
+            file_path = Path(error.get("filename", ""))
 
-            line_start = error.get("line", 1)
-            col_start = error.get("column", 1)
-            line_end = error.get("endLine")
-            col_end = error.get("endColumn")
+            line_start = error.get("location", {}).get("row", 1)
+            col_start = error.get("location", {}).get("column", 1)
+            line_end = error.get("end_location", {}).get("row")
+            col_end = error.get("end_location", {}).get("column")
 
-            error_code = error.get(
-                "message-id", error.get("symbol", "Unknown")
-            )
+            error_code = error.get("code", "Unknown")
             message = error.get("message", "Unknown error")
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(

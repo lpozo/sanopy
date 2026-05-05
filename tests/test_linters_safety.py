@@ -5,8 +5,8 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters.base import AsyncCompletedProcess
-from lintaider.linters.safety import SafetyLinter, _extract_json
+from sanopy.linters.base import AsyncCompletedProcess
+from sanopy.linters.safety import SafetyLinter, _extract_json
 
 
 @pytest.fixture

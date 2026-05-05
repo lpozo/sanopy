@@ -3,9 +3,9 @@
 import json
 from pathlib import Path
 
-from lintaider.linters.base import AsyncCompletedProcess, BaseLinter
-from lintaider.linters.context import get_linter_context
-from lintaider.linters.result import LinterResult
+from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
+from sanopy.linters.context import get_linter_context
+from sanopy.linters.result import LinterResult
 
 MIN_COMPLEXITY_RANK = "C"
 

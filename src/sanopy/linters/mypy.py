@@ -1,20 +1,20 @@
-"""Vulture linter implementation for finding dead code."""
+"""MyPy linter implementation."""
 
 import re
 from pathlib import Path
 
-from lintaider.linters.base import AsyncCompletedProcess, BaseLinter
-from lintaider.linters.context import get_linter_context
-from lintaider.linters.result import LinterResult
+from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
+from sanopy.linters.context import get_linter_context
+from sanopy.linters.result import LinterResult
 
 
-class VultureLinter(BaseLinter):
-    """Linter implementation for Vulture."""
+class MyPyLinter(BaseLinter):
+    """Linter implementation for MyPy (Static type checker)."""
 
-    name = "Vulture"
+    name = "MyPy"
 
     def build_command(self, target: Path) -> list[str]:
-        """Build the Vulture command for the target path.
+        """Build the MyPy command for the target path.
 
         Args:
             target: The file or directory to scan.
@@ -22,12 +22,20 @@ class VultureLinter(BaseLinter):
         Returns:
             A list of command arguments.
         """
-        return ["vulture", str(target.absolute())]
+        return [
+            "mypy",
+            "--show-column-numbers",
+            "--show-error-codes",
+            "--no-error-summary",
+            str(target.absolute()),
+        ]
 
     def parse_output(
-        self, process_result: AsyncCompletedProcess, target: Path
+        self,
+        process_result: AsyncCompletedProcess,
+        target: Path,
     ) -> list[LinterResult]:
-        """Parse Vulture text output.
+        """Parse MyPy text output.
 
         Args:
             process_result: The completed process result.
@@ -37,8 +45,11 @@ class VultureLinter(BaseLinter):
             A list of standardized linter results.
         """
 
-        # Regex for Vulture output: filename:lineno: message
-        pattern = re.compile(r"^(?P<file>.+?):(?P<line>\d+):\s*(?P<msg>.+)$")
+        pattern = re.compile(
+            r"^(?P<file>.+?):(?P<line>\d+):(?P<col>\d+):\s*"
+            r"(?P<severity>error|warning|note):\s*"
+            r"(?P<msg>.+?)\s*\[(?P<code>.+?)\]$"
+        )
 
         parsed_results = []
         for line in process_result.stdout.splitlines():
@@ -52,7 +63,9 @@ class VultureLinter(BaseLinter):
 
             file_path = Path(match.group("file"))
             line_start = int(match.group("line"))
+            col_start = int(match.group("col"))
             message = match.group("msg")
+            error_code = match.group("code")
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
@@ -66,10 +79,10 @@ class VultureLinter(BaseLinter):
                     file_path=file_path,
                     line_start=line_start,
                     line_end=line_start,
-                    col_start=None,
+                    col_start=col_start,
                     col_end=None,
                     linter_name=self.name,
-                    error_code="unused-code",
+                    error_code=error_code,
                     message=message,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,

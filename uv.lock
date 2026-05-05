@@ -692,7 +692,7 @@ wheels = [
 ]
 
 [[package]]
-name = "lintaider"
+name = "sanopy"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [

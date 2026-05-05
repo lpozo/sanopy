@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from lintaider.linters import BaseLinter, Engine
-from lintaider.linters.result import LinterResult
+from sanopy.linters import BaseLinter, Engine
+from sanopy.linters.result import LinterResult
 
 
 class MockLinter(BaseLinter):

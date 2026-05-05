@@ -44,7 +44,7 @@ def get_bundled_config_path(linter_name: str, category: str) -> Path | None:
 
     try:
         # Construct resource package path
-        resource_pkg = f"lintaider.linters.configs.{category}"
+        resource_pkg = f"sanopy.linters.configs.{category}"
         # When installed as a regular package, we can get the path directly.
         # importlib.resources.files() is the modern way.
         resource_path = importlib.resources.files(resource_pkg).joinpath(
