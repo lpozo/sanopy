@@ -1,69 +1,56 @@
-name: CI/CD Pipeline
+name: Publish to PyPI
 
 on:
-  push:
-    branches: [main]
-    tags: ["v*"]
   pull_request:
     branches: [main]
+    types: [closed]
 
 jobs:
-  test:
-    name: Tests & Linting
+  build:
+    name: Build distribution artifacts
+    if: github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v5
-        with:
-          enable-cache: true
-          cache-dependency-path: "uv.lock"
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version-file: ".python-version"
 
-      - name: Install dependencies
-        run: uv sync --dev
-
-      - name: Lint with ruff
-        run: uv run ruff check .
-
-      - name: Check formatting with ruff
-        run: uv run ruff format --check .
-
-      - name: Run tests with pytest
-        run: uv run pytest
-
-  publish:
-    name: Build & Publish to PyPI
-    needs: [test]
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    environment:
-      name: pypi
-      url: https://pypi.org/p/lintaider
-    permissions:
-      id-token: write # Required for OIDC trusted publishing
-      contents: write # Required for creating a release
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-
       - name: Build package
         run: uv build
 
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist/*
+          if-no-files-found: error
+
+  publish:
+    name: Publish to PyPI
+    needs: [build]
+    if: github.event.pull_request.merged == true
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sanopy/
+    permissions:
+      id-token: write
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist-artifacts
+          path: dist
+
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
-
-      - name: Create GitHub Release
-        uses: softprops/action-gh-release@v2
         with:
-          generate_release_notes: true
-          files: |
-            dist/*.tar.gz
-            dist/*.whl
+          packages-dir: dist
