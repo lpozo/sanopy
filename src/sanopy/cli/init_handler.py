@@ -8,16 +8,36 @@ from sanopy.config import Config
 from sanopy.linters import LINTER_MAP
 
 
-def handle_init() -> None:
-    """Execute the interactive initialization flow."""
+def _print_saved_config(config: Config) -> None:
+    """Print a success panel with the saved linter configuration."""
+    skip_str = (
+        ", ".join(config.skip_linters) if config.skip_linters else "None"
+    )
+    only_str = ", ".join(config.only_linters) if config.only_linters else "All"
+    console.print(
+        Panel(
+            f"Skip Linters: [bold]{skip_str}[/bold]\n"
+            f"Only Linters: [bold]{only_str}[/bold]",
+            title="Configuration Saved to .sanopy.toml",
+            border_style="green",
+        )
+    )
+
+
+def handle_init(only: str | None = None, skip: str | None = None) -> None:
+    """Execute the initialization flow (interactive or non-interactive)."""
     config = Config.load()
     builder = ConfigBuilder(config)
 
-    console.print("[bold]Sanopy Setup Wizard[/bold]\n")
+    if only is not None or skip is not None:
+        builder.apply_cli_defaults(only=only, skip=skip)
+        config.save()
+        _print_saved_config(config)
+        return
 
+    console.print("[bold]Sanopy Setup Wizard[/bold]\n")
     builder.select_linter_preferences()
     builder.print_summary()
-
     if not click.confirm("Save this configuration?", default=True):
         console.print(
             "[yellow]Setup cancelled. No changes were saved.[/yellow]"
@@ -26,25 +46,7 @@ def handle_init() -> None:
 
     built_config = builder.build()
     built_config.save()
-
-    skip_str = (
-        ", ".join(built_config.skip_linters)
-        if built_config.skip_linters
-        else "None"
-    )
-    only_str = (
-        ", ".join(built_config.only_linters)
-        if built_config.only_linters
-        else "All"
-    )
-    console.print(
-        Panel(
-            f"Skip Linters: [bold]{skip_str}[/bold]\n"
-            f"Only Linters: [bold]{only_str}[/bold]",
-            title="Configuration Saved to sanopy.toml",
-            border_style="green",
-        )
-    )
+    _print_saved_config(built_config)
 
 
 class ConfigBuilder:
@@ -68,6 +70,25 @@ class ConfigBuilder:
         self.config.skip_linters = skip
         self.config.only_linters = only
         return skip, only
+
+    def apply_cli_defaults(
+        self, *, only: str | None = None, skip: str | None = None
+    ) -> tuple[list[str], list[str]]:
+        """Apply non-interactive linter defaults from CLI options."""
+        skip_linters = self._parse_linter_list(skip or "")
+        only_linters = self._parse_linter_list(only or "")
+        skip_linters = self._validate_and_filter_linters(skip_linters, "skip")
+        only_linters = self._validate_and_filter_linters(only_linters, "only")
+
+        overlap = sorted(set(skip_linters).intersection(only_linters))
+        if overlap:
+            skip_linters = [
+                name for name in skip_linters if name not in overlap
+            ]
+
+        self.config.skip_linters = skip_linters
+        self.config.only_linters = only_linters
+        return skip_linters, only_linters
 
     def print_summary(self) -> None:
         """Display configuration summary before saving."""
