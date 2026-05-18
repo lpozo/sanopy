@@ -14,8 +14,7 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from sanopy.cli.ui import HUMAN_READABLE_REPORT_FILE
-from sanopy.cli.ui import console as console
+from sanopy.cli.ui import console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, Engine
 from sanopy.linters.result import LinterResult
@@ -159,15 +158,21 @@ class ScanReporter:
             f"\n[bold green]Results saved to {self.output}[/bold green]"
         )
 
+    def get_human_readable_path(self) -> Path:
+        """Return the markdown report path for the current scan target."""
+        target_name = (
+            self.target.stem if self.target.is_file() else self.target.name
+        )
+        report_name = f"linting-report-{target_name}.md"
+        return self.output.parent / report_name
+
     def write_human_readable_report(self) -> None:
         """Write a markdown report for human-readable sharing."""
         report_markdown = self._build_markdown_report()
-        HUMAN_READABLE_REPORT_FILE.write_text(
-            report_markdown, encoding="utf-8"
-        )
+        path = self.get_human_readable_path()
+        path.write_text(report_markdown, encoding="utf-8")
         console.print(
-            "[bold green]Human-readable report saved to "
-            f"{HUMAN_READABLE_REPORT_FILE}[/bold green]"
+            f"[bold green]Human-readable report saved to {path}[/bold green]"
         )
 
     def _build_markdown_report(self) -> str:
@@ -230,7 +235,9 @@ class ScanReporter:
         """Print a findings summary table and optional verbose details."""
         counts: Counter[str] = Counter(r.linter_name for r in self.results)
 
-        table = Table(title="[bold red]Findings Summary[/bold red]")
+        table = Table(
+            title=f"[bold red]Findings Summary for {self.target}[/bold red]"
+        )
         table.add_column("Linter", style="cyan", no_wrap=True)
         table.add_column("Issues Found", justify="right", style="magenta")
 
