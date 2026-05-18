@@ -5,7 +5,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-DEFAULT_CONFIG_PATH = Path("sanopy.toml")
+DEFAULT_CONFIG_PATH = Path(".sanopy.toml")
 
 
 @dataclass
@@ -17,10 +17,12 @@ class Config:
 
     @classmethod
     def load(cls, path: Path | None = None) -> Self:
-        """Load configuration from a TOML file and environment variables.
+        """Load configuration from a TOML file.
+
+        If the file does not exist, create it with default values.
 
         Args:
-            path: Path to the configuration file. Defaults to sanopy.toml.
+            path: Path to the configuration file. Defaults to .sanopy.toml.
 
         Returns:
             A Config instance.
@@ -28,7 +30,15 @@ class Config:
         config_path = path or DEFAULT_CONFIG_PATH
 
         if not config_path.exists():
-            return cls()
+            # Defaults: all linters active, no skip
+            config = cls(only_linters=[], skip_linters=[])
+            config.save(config_path)
+            print(
+                "[Sanopy] Created default configuration at "
+                f"{config_path}. Edit this file to customize "
+                "linter selection."
+            )
+            return config
 
         try:
             with config_path.open("rb") as file:
@@ -44,7 +54,14 @@ class Config:
                 config._normalize()
                 return config
         except (OSError, ValueError):
-            return cls()
+            # If the file is corrupt, reset to defaults and overwrite
+            config = cls(only_linters=[], skip_linters=[])
+            config.save(config_path)
+            print(
+                "[Sanopy] Invalid configuration detected. "
+                f"Reset to default at {config_path}."
+            )
+            return config
 
     def _normalize(self) -> None:
         """Normalise all fields to canonical lower-case, stripped values."""
@@ -63,7 +80,7 @@ class Config:
         """Normalise and persist the current configuration to a TOML file.
 
         Args:
-            path: Destination path. Defaults to ``sanopy.toml`` in the
+            path: Destination path. Defaults to ``.sanopy.toml`` in the
                 current working directory.
         """
         self._normalize()
