@@ -6,8 +6,8 @@ from sanopy.config import Config
 def test_config_default() -> None:
     """Test default config initialization."""
     config = Config()
-    assert config.only_linters == []
-    assert config.skip_linters == []
+    assert not config.only_linters
+    assert not config.skip_linters
 
 
 def test_config_save_load(tmp_path) -> None:
@@ -28,9 +28,11 @@ def test_config_save_load(tmp_path) -> None:
 
 def test_config_load_non_existent(tmp_path) -> None:
     """Test loading a non-existent config returns defaults."""
-    config = Config.load(tmp_path / "non_existent.toml")
-    assert config.only_linters == []
-    assert config.skip_linters == []
+    config_file = tmp_path / "non_existent.toml"
+    config = Config.load(config_file)
+    assert config_file.exists()
+    assert not config.only_linters
+    assert not config.skip_linters
 
 
 def test_config_normalize_linter_lists(tmp_path) -> None:
