@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock
 import pytest
 from click.testing import CliRunner
 
-from sanopy.cli import main
+from sanopy.cli.cli import main
 from sanopy.config import Config
 from sanopy.linters.result import LinterResult
 

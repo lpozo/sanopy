@@ -1,5 +1,5 @@
 """Sanopy CLI package."""
 
-from sanopy.cli.main import main
+from sanopy.cli.cli import main
 
 __all__ = ["main"]

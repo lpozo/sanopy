@@ -5,9 +5,9 @@ from pathlib import Path
 
 import click
 
+from sanopy.cli.constants import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
 from sanopy.cli.init_handler import handle_init
 from sanopy.cli.scan_handler import handle_scan
-from sanopy.cli.ui import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
 
 
 @click.group()
@@ -97,7 +97,3 @@ def scan(  # vulture: ignore
         )
 
     asyncio.run(run_all_scans())
-
-
-if __name__ == "__main__":
-    main()
