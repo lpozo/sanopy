@@ -8,22 +8,6 @@ from sanopy.config import Config
 from sanopy.linters import LINTER_MAP
 
 
-def _print_saved_config(config: Config) -> None:
-    """Print a success panel with the saved linter configuration."""
-    skip_str = (
-        ", ".join(config.skip_linters) if config.skip_linters else "None"
-    )
-    only_str = ", ".join(config.only_linters) if config.only_linters else "All"
-    console.print(
-        Panel(
-            f"Skip Linters: [bold]{skip_str}[/bold]\n"
-            f"Only Linters: [bold]{only_str}[/bold]",
-            title="Configuration Saved to .sanopy.toml",
-            border_style="green",
-        )
-    )
-
-
 def handle_init(only: str | None = None, skip: str | None = None) -> None:
     """Execute the initialization flow (interactive or non-interactive)."""
     config = Config.load()
@@ -180,3 +164,19 @@ class ConfigBuilder:
                 border_style="cyan",
             )
         )
+
+
+def _print_saved_config(config: Config) -> None:
+    """Print a success panel with the saved linter configuration."""
+    skip_str = (
+        ", ".join(config.skip_linters) if config.skip_linters else "None"
+    )
+    only_str = ", ".join(config.only_linters) if config.only_linters else "All"
+    console.print(
+        Panel(
+            f"Skip Linters: [bold]{skip_str}[/bold]\n"
+            f"Only Linters: [bold]{only_str}[/bold]",
+            title="Configuration Saved to .sanopy.toml",
+            border_style="green",
+        )
+    )
