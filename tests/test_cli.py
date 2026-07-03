@@ -20,7 +20,9 @@ def _mock_scan_config(mocker):
 
 
 def test_cli_scan_no_issues(mocker, tmp_path) -> None:
-    """Test scanning a file with no issues."""
+    """Test machine-mode scan emits schema envelope with no findings."""
+    import json
+
     runner = CliRunner()
     test_file = tmp_path / "valid.py"
     test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
@@ -33,11 +35,13 @@ def test_cli_scan_no_issues(mocker, tmp_path) -> None:
 
     result = runner.invoke(main, ["scan", str(test_file)])
     assert result.exit_code == 0
-    assert "No issues found" in result.output
+    payload = json.loads(result.output)
+    assert payload["schema_version"] == "1.0.0"
+    assert payload["findings"] == []
 
 
 def test_cli_scan_with_issues(mocker, tmp_path) -> None:
-    """Test scanning a file with issues saves results to a JSON file."""
+    """Test human-mode scan with --output saves schema envelope JSON."""
     import json
 
     runner = CliRunner()
@@ -64,22 +68,33 @@ def test_cli_scan_with_issues(mocker, tmp_path) -> None:
 
     output_file = tmp_path / "scan-result.json"
     result = runner.invoke(
-        main, ["scan", str(test_file), "--output", str(output_file)]
+        main,
+        [
+            "scan",
+            str(test_file),
+            "--output",
+            str(output_file),
+            "--output-mode",
+            "human",
+        ],
     )
 
-    assert result.exit_code == 0
+    assert result.exit_code == 1
     assert "Findings Summary" in result.output
     assert "Results saved to" in result.output
     expected_output_file = tmp_path / "scan-result-error.json"
     assert expected_output_file.exists()
-    data = json.loads(expected_output_file.read_text(encoding="utf-8"))
-    assert len(data) == 1
-    assert data[0]["linter_name"] == "TestLinter"
-    assert data[0]["error_code"] == "E1"
+    payload = json.loads(expected_output_file.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1.0.0"
+    assert len(payload["findings"]) == 1
+    assert payload["findings"][0]["linter"]["name"] == "TestLinter"
+    assert payload["findings"][0]["linter"]["rule_id"] == "E1"
 
 
 def test_cli_scan_prints_json_to_stdout_by_default(mocker, tmp_path) -> None:
     """Test scanning emits JSON to stdout when no output path is provided."""
+    import json
+
     runner = CliRunner()
     test_file = tmp_path / "error.py"
     test_file.write_text("import bad\n", encoding="utf-8")
@@ -105,9 +120,45 @@ def test_cli_scan_prints_json_to_stdout_by_default(mocker, tmp_path) -> None:
     with runner.isolated_filesystem(temp_dir=tmp_path):
         result = runner.invoke(main, ["scan", str(test_file)])
 
-        assert result.exit_code == 0
-        assert '"linter_name": "TestLinter"' in result.output
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["schema_version"] == "1.0.0"
+        assert payload["run"]["finding_count"] == 1
+        finding = payload["findings"][0]
+        assert finding["id"]
+        assert finding["message"] == "A test error"
+        assert finding["linter"]["name"] == "TestLinter"
+        assert finding["linter"]["rule_id"] == "E1"
+        assert finding["linter"]["normalized_severity"] == "error"
+        assert finding["location"]["path"] == str(test_file)
+        assert finding["location"]["start"]["line"] == 1
+        assert finding["location"]["start"]["column"] == 1
+        assert finding["location"]["end"]["line"] == 1
+        assert finding["location"]["end"]["column"] == 10
         assert not (tmp_path / "scan-result-error.json").exists()
+
+
+def test_cli_scan_human_mode_does_not_print_json_stdout(
+    mocker, tmp_path
+) -> None:
+    """Test human output mode avoids machine JSON output on stdout."""
+    runner = CliRunner()
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        return_value=[],
+    )
+
+    result = runner.invoke(
+        main, ["scan", str(test_file), "--output-mode", "human"]
+    )
+
+    assert result.exit_code == 0
+    assert "No issues found" in result.output
+    assert '"schema_version"' not in result.output
 
 
 def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
@@ -149,13 +200,13 @@ def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
             ],
         )
 
-        assert result.exit_code == 0
+        assert result.exit_code == 1
         expected_output_file = tmp_path / "scan-result-error.json"
         assert expected_output_file.exists()
 
-        data = json.loads(expected_output_file.read_text(encoding="utf-8"))
-        assert len(data) == 1
-        assert data[0]["linter_name"] == "TestLinter"
+        payload = json.loads(expected_output_file.read_text(encoding="utf-8"))
+        assert len(payload["findings"]) == 1
+        assert payload["findings"][0]["linter"]["name"] == "TestLinter"
 
         report_file = tmp_path / "linting-report-error.md"
         assert report_file.exists()
@@ -186,6 +237,25 @@ def test_cli_scan_human_readable_short_flag(mocker, tmp_path) -> None:
         assert result.exit_code == 0
         assert (tmp_path / "scan-result-valid.json").exists()
         assert (tmp_path / "linting-report-valid.md").exists()
+
+
+def test_cli_scan_returns_exit_code_2_on_scan_failure(
+    mocker, tmp_path
+) -> None:
+    """Test scan exits with code 2 when linter execution fails."""
+    runner = CliRunner()
+    test_file = tmp_path / "broken.py"
+    test_file.write_text("print('x')\n", encoding="utf-8")
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        side_effect=RuntimeError("engine failure"),
+    )
+
+    result = runner.invoke(main, ["scan", str(test_file)])
+
+    assert result.exit_code == 2
 
 
 def test_cli_scan_verbose_option_not_available(tmp_path) -> None:
@@ -442,13 +512,14 @@ def test_scan_reporter_write_json_report(tmp_path, fake_result) -> None:
     from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
-    reporter = ScanReporter([fake_result], tmp_path, output)
+    reporter = ScanReporter([fake_result], tmp_path, output, ["testlinter"])
     reporter.write_json_report()
 
     assert output.exists()
-    data = json.loads(output.read_text(encoding="utf-8"))
-    assert len(data) == 1
-    assert data[0]["linter_name"] == "TestLinter"
+    payload = json.loads(output.read_text(encoding="utf-8"))
+    assert payload["schema_version"] == "1.0.0"
+    assert len(payload["findings"]) == 1
+    assert payload["findings"][0]["linter"]["name"] == "TestLinter"
 
 
 def test_scan_reporter_write_human_readable_report(
@@ -461,7 +532,7 @@ def test_scan_reporter_write_human_readable_report(
     from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
-    reporter = ScanReporter([fake_result], tmp_path, output)
+    reporter = ScanReporter([fake_result], tmp_path, output, ["testlinter"])
 
     old_cwd = Path.cwd()
     try:
@@ -484,6 +555,6 @@ def test_scan_reporter_write_summary_report(tmp_path, fake_result) -> None:
     from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
-    reporter = ScanReporter([fake_result], tmp_path, output)
+    reporter = ScanReporter([fake_result], tmp_path, output, ["testlinter"])
 
     reporter.write_summary_report()

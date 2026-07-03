@@ -1,8 +1,11 @@
 """Handler for the 'scan' command."""
 
+import hashlib
 import json
 from collections import Counter
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import Literal
 
 from rich.progress import (
     BarColumn,
@@ -24,8 +27,9 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     only: str | None,
     skip: str | None,
     output: Path | None,
+    output_mode: Literal["machine", "human"] = "machine",
     human_readable: bool = False,
-) -> None:
+) -> int:
     """Run all active linters on a target path and write results to JSON.
 
     Linters are executed in parallel. Progress is rendered in the terminal.
@@ -39,16 +43,46 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
         skip: Optional comma-separated list of linter names to skip.
             Overrides the ``skip_linters`` value from config.
         output: Optional path to a JSON file where results will be saved.
+        output_mode: Controls whether terminal output is machine-only JSON
+            or human-focused progress and summaries.
         human_readable: When ``True``, also writes a markdown report to
             ``linting-report.md``.
+
+    Returns:
+        Number of findings emitted for the target.
     """
-    console.print(f"[bold blue]Scanning {target}...[/bold blue]")
+    if output_mode == "human":
+        console.print(f"[bold blue]Scanning {target}...[/bold blue]")
 
     config = Config.load()
     active_linters = _get_active_linters(config, only, skip)
 
     # Use the linter mapping to instantiate the active linters
     engine = Engine(linters=[LINTER_MAP[name]() for name in active_linters])
+    results = await _run_linters(engine, target, active_linters, output_mode)
+
+    # Logical Sort: by file then line
+    results.sort(key=lambda r: (str(r.file_path), r.line_start))
+
+    reporter = ScanReporter(results, target, output, active_linters)
+    _render_scan_output(
+        reporter=reporter,
+        output_mode=output_mode,
+        human_readable=human_readable,
+    )
+
+    return len(results)
+
+
+async def _run_linters(
+    engine: Engine,
+    target: Path,
+    active_linters: list[str],
+    output_mode: Literal["machine", "human"],
+) -> list[LinterResult]:
+    """Run linters with optional human-mode progress rendering."""
+    if output_mode != "human":
+        return await engine.run_all(target)
 
     with Progress(
         SpinnerColumn(),
@@ -64,23 +98,31 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
         def progress_cb() -> None:
             progress.update(task_id, advance=1)
 
-        results = await engine.run_all(target, progress_callback=progress_cb)
+        return await engine.run_all(target, progress_callback=progress_cb)
 
-    # Logical Sort: by file then line
-    results.sort(key=lambda r: (str(r.file_path), r.line_start))
 
-    if not results:
+def _render_scan_output(
+    *,
+    reporter: "ScanReporter",
+    output_mode: Literal["machine", "human"],
+    human_readable: bool,
+) -> None:
+    """Render scan output according to machine/human mode settings."""
+    if output_mode == "human" and not reporter.results:
         console.print("[bold green]No issues found! 🎉[/bold green]")
 
-    reporter = ScanReporter(results, target, output)
-    if results:
+    announce = output_mode == "human"
+
+    if announce and reporter.results:
         reporter.write_summary_report()
-    if output:
-        reporter.write_json_report()
+    if reporter.output:
+        reporter.write_json_report(announce=announce)
     if human_readable:
-        reporter.write_human_readable_report()
-    reporter.print_fix_hint()
-    reporter.write_json_stdout()
+        reporter.write_human_readable_report(announce=announce)
+    if announce:
+        reporter.print_fix_hint()
+    else:
+        reporter.write_json_stdout()
 
 
 def _parse_linter_names(names: str | None, default: list[str]) -> list[str]:
@@ -135,6 +177,7 @@ class ScanReporter:
         results: list[LinterResult],
         target: Path,
         output: Path | None,
+        active_linters: list[str],
     ) -> None:
         """Initialize reporter with scan results and output paths.
 
@@ -142,23 +185,103 @@ class ScanReporter:
             results: Sorted linter results.
             target: The scanned file or directory.
             output: Optional path to the JSON results file.
+            active_linters: Linters executed for this scan target.
         """
         self.results = results
         self.target = target
         self.output = output
+        self.active_linters = active_linters
 
     def _serialize_results(self) -> str:
         """Return deterministic JSON serialization for scan results."""
-        return json.dumps([r.to_dict() for r in self.results], indent=2)
+        return json.dumps(self._build_payload(), indent=2)
 
-    def write_json_report(self) -> None:
+    def _build_payload(self) -> dict[str, object]:
+        """Build the versioned machine-readable schema envelope."""
+        return {
+            "schema_version": "1.0.0",
+            "run": {
+                "target": str(self.target),
+                "generated_at": datetime.now(UTC).isoformat(),
+                "active_linters": self.active_linters,
+                "finding_count": len(self.results),
+            },
+            "findings": [self._to_finding(result) for result in self.results],
+        }
+
+    def _to_finding(self, result: LinterResult) -> dict[str, object]:
+        """Map a linter result to the stable machine finding shape."""
+        result_data = result.to_dict()
+        return {
+            "id": self._build_finding_id(result),
+            "message": result_data["message"],
+            "linter": {
+                "name": result_data["linter_name"],
+                "rule_id": result_data["error_code"],
+                "raw_severity": result_data.get("raw_severity"),
+                "normalized_severity": self._normalize_severity(result),
+            },
+            "location": {
+                "path": result_data["file_path"],
+                "start": {
+                    "line": result_data["line_start"],
+                    "column": result_data["col_start"],
+                },
+                "end": {
+                    "line": result_data["line_end"],
+                    "column": result_data["col_end"],
+                },
+            },
+            "context": {
+                "snippet": result_data["snippet_context"],
+                "snippet_start_line": result_data["snippet_start_line"],
+                "semantic": result_data["semantic_context"],
+            },
+        }
+
+    def _build_finding_id(self, result: LinterResult) -> str:
+        """Create a deterministic finding ID for cross-run tracking."""
+        digest_input = "|".join(
+            [
+                str(result.file_path),
+                str(result.line_start),
+                str(result.line_end),
+                str(result.col_start),
+                str(result.col_end),
+                result.linter_name,
+                result.error_code,
+                result.message,
+            ]
+        )
+        return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
+
+    def _normalize_severity(self, result: LinterResult) -> str:
+        """Normalize linter severities into error/warning/info buckets."""
+        if result.raw_severity:
+            raw = str(result.raw_severity).lower()
+            if raw in {"error", "warning", "info"}:
+                return raw
+
+        linter = result.linter_name.lower()
+        code = result.error_code.upper()
+
+        if linter in {"bandit", "safety", "semgrep", "mypy", "pyright"}:
+            return "error"
+        if code.startswith(("E", "F", "B")):
+            return "error"
+        if code.startswith(("W", "C", "R")):
+            return "warning"
+        return "info"
+
+    def write_json_report(self, *, announce: bool = True) -> None:
         """Write scan results as deterministic JSON output."""
         if not self.output:
             return
         self.output.write_text(self._serialize_results(), encoding="utf-8")
-        console.print(
-            f"\n[bold green]Results saved to {self.output}[/bold green]"
-        )
+        if announce:
+            console.print(
+                f"\n[bold green]Results saved to {self.output}[/bold green]"
+            )
 
     def write_json_stdout(self) -> None:
         """Write deterministic JSON output to stdout for automation."""
@@ -178,14 +301,16 @@ class ScanReporter:
         report_name = f"linting-report-{target_name}.md"
         return self.output.parent / report_name
 
-    def write_human_readable_report(self) -> None:
+    def write_human_readable_report(self, *, announce: bool = True) -> None:
         """Write a markdown report for human-readable sharing."""
         report_markdown = self._build_markdown_report()
         path = self.get_human_readable_path()
         path.write_text(report_markdown, encoding="utf-8")
-        console.print(
-            f"[bold green]Human-readable report saved to {path}[/bold green]"
-        )
+        if announce:
+            console.print(
+                "[bold green]Human-readable report saved to "
+                f"{path}[/bold green]"
+            )
 
     def _build_markdown_report(self) -> str:
         """Build a markdown linting report from the current scan results."""

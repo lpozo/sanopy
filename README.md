@@ -40,7 +40,22 @@ sanopy init --only ruff,mypy --skip bandit
 sanopy scan src/
 ```
 
-By default, machine-readable JSON is printed to stdout.
+By default, machine-readable JSON is printed to stdout in a versioned
+envelope:
+
+```json
+{
+  "schema_version": "1.0.0",
+  "run": {"target": "src", "finding_count": 0},
+  "findings": []
+}
+```
+
+Use human output mode for terminal-friendly progress and summaries:
+
+```bash
+sanopy scan src/ --output-mode human
+```
 
 You can now scan multiple directories or files at once:
 

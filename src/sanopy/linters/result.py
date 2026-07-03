@@ -19,6 +19,7 @@ class LinterResult:
         linter_name: Name of the linter that produced the error.
         error_code: The specific error code from the linter.
         message: The descriptive error message.
+            raw_severity: Original severity if provided by the linter.
         snippet_context: The code surrounding the error for local reporting.
     """
 
@@ -30,6 +31,7 @@ class LinterResult:
     linter_name: str
     error_code: str
     message: str
+    raw_severity: str | None = None
     snippet_context: str = ""
     snippet_start_line: int = 1
     semantic_context: str = ""
@@ -66,6 +68,7 @@ class LinterResult:
             linter_name=data["linter_name"],
             error_code=data["error_code"],
             message=data["message"],
+            raw_severity=data.get("raw_severity"),
             snippet_context=data.get("snippet_context", ""),
             snippet_start_line=data.get("snippet_start_line", 1),
             semantic_context=data.get("semantic_context", ""),
