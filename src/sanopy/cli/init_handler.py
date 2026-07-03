@@ -12,25 +12,25 @@ def handle_init(only: str | None = None, skip: str | None = None) -> None:
     """Execute the initialization flow (interactive or non-interactive)."""
     config = Config.load()
     builder = ConfigBuilder(config)
+    printer = ConfigSummaryPrinter(config)
 
     if only is not None or skip is not None:
-        builder.apply_cli_defaults(only=only, skip=skip)
+        builder.apply_cli_config(only=only, skip=skip)
         config.save()
-        _print_saved_config(config)
+        printer.print_saved()
         return
 
     console.print("[bold]Sanopy Setup Wizard[/bold]\n")
-    builder.select_linter_preferences()
-    builder.print_summary()
+    builder.apply_interactive_config()
+    printer.print_setup()
     if not click.confirm("Save this configuration?", default=True):
         console.print(
             "[yellow]Setup cancelled. No changes were saved.[/yellow]"
         )
         return
 
-    built_config = builder.build()
-    built_config.save()
-    _print_saved_config(built_config)
+    config.save()
+    printer.print_saved()
 
 
 class ConfigBuilder:
@@ -44,47 +44,28 @@ class ConfigBuilder:
         """
         self.config = config
 
-    def select_linter_preferences(self) -> tuple[list[str], list[str]]:
-        """Prompt for linter preferences and store them.
-
-        Returns:
-            A tuple of (skip_linters, only_linters).
-        """
-        skip, only = self._prompt_linter_preferences()
-        self.config.skip_linters = skip
-        self.config.only_linters = only
-        return skip, only
-
-    def apply_cli_defaults(
-        self, *, only: str | None = None, skip: str | None = None
-    ) -> tuple[list[str], list[str]]:
-        """Apply non-interactive linter defaults from CLI options."""
-        skip_linters = self._parse_linter_list(skip or "")
-        only_linters = self._parse_linter_list(only or "")
-        skip_linters = self._validate_and_filter_linters(skip_linters, "skip")
-        only_linters = self._validate_and_filter_linters(only_linters, "only")
-
-        overlap = sorted(set(skip_linters).intersection(only_linters))
-        if overlap:
-            skip_linters = [
-                name for name in skip_linters if name not in overlap
-            ]
-
+    def apply_interactive_config(self) -> None:
+        """Apply config preferences collected from interactive prompts."""
+        skipped_str, only_str = self._prompt_linter_preferences()
+        skip_linters, only_linters = self._resolve_linter_preferences(
+            skipped_str=skipped_str,
+            only_str=only_str,
+            announce_overlap=True,
+        )
         self.config.skip_linters = skip_linters
         self.config.only_linters = only_linters
-        return skip_linters, only_linters
 
-    def print_summary(self) -> None:
-        """Display configuration summary before saving."""
-        self._display_summary()
-
-    def build(self) -> Config:
-        """Return the built configuration.
-
-        Returns:
-            The populated Config object.
-        """
-        return self.config
+    def apply_cli_config(
+        self, *, only: str | None = None, skip: str | None = None
+    ) -> None:
+        """Apply non-interactive linter config from CLI options."""
+        skip_linters, only_linters = self._resolve_linter_preferences(
+            skipped_str=skip or "",
+            only_str=only or "",
+            announce_overlap=False,
+        )
+        self.config.skip_linters = skip_linters
+        self.config.only_linters = only_linters
 
     def _parse_linter_list(self, raw: str) -> list[str]:
         """Normalise a comma-separated string into a deduplicated list."""
@@ -108,7 +89,7 @@ class ConfigBuilder:
             return [name for name in linter_list if name in LINTER_MAP]
         return linter_list
 
-    def _prompt_linter_preferences(self) -> tuple[list[str], list[str]]:
+    def _prompt_linter_preferences(self) -> tuple[str, str]:
         """Prompt for linter preferences."""
         available_linters = sorted(LINTER_MAP.keys())
         console.print(
@@ -126,6 +107,16 @@ class ConfigBuilder:
             show_default=True,
         )
 
+        return skipped_str, only_str
+
+    def _resolve_linter_preferences(
+        self,
+        *,
+        skipped_str: str,
+        only_str: str,
+        announce_overlap: bool,
+    ) -> tuple[list[str], list[str]]:
+        """Parse, validate, and reconcile skip/only linter lists."""
         skip_linters = self._parse_linter_list(skipped_str)
         only_linters = self._parse_linter_list(only_str)
 
@@ -134,18 +125,41 @@ class ConfigBuilder:
 
         overlap = sorted(set(skip_linters).intersection(only_linters))
         if overlap:
-            console.print(
-                "[yellow]Removing linters present in both "
-                "skip and only:[/yellow] " + ", ".join(overlap)
-            )
+            if announce_overlap:
+                console.print(
+                    "[yellow]Removing linters present in both "
+                    "skip and only:[/yellow] " + ", ".join(overlap)
+                )
             skip_linters = [
                 name for name in skip_linters if name not in overlap
             ]
 
         return skip_linters, only_linters
 
-    def _display_summary(self) -> None:
-        """Display configuration summary before saving."""
+
+class ConfigSummaryPrinter:
+    """Render config summaries for setup and save flows."""
+
+    def __init__(self, config: Config) -> None:
+        """Initialize the summary printer with the config to display."""
+        self.config = config
+
+    def print_setup(self) -> None:
+        """Print setup summary before asking for confirmation."""
+        self._print_config_summary(
+            title="Setup Summary",
+            border_style="cyan",
+        )
+
+    def print_saved(self) -> None:
+        """Print a success panel with the saved linter configuration."""
+        self._print_config_summary(
+            title="Configuration Saved to .sanopy.toml",
+            border_style="green",
+        )
+
+    def _print_config_summary(self, *, title: str, border_style: str) -> None:
+        """Print a panel with current skip/only linter configuration."""
         skip_str = (
             ", ".join(self.config.skip_linters)
             if self.config.skip_linters
@@ -160,23 +174,7 @@ class ConfigBuilder:
             Panel(
                 f"Skip Linters: [bold]{skip_str}[/bold]\n"
                 f"Only Linters: [bold]{only_str}[/bold]",
-                title="Setup Summary",
-                border_style="cyan",
+                title=title,
+                border_style=border_style,
             )
         )
-
-
-def _print_saved_config(config: Config) -> None:
-    """Print a success panel with the saved linter configuration."""
-    skip_str = (
-        ", ".join(config.skip_linters) if config.skip_linters else "None"
-    )
-    only_str = ", ".join(config.only_linters) if config.only_linters else "All"
-    console.print(
-        Panel(
-            f"Skip Linters: [bold]{skip_str}[/bold]\n"
-            f"Only Linters: [bold]{only_str}[/bold]",
-            title="Configuration Saved to .sanopy.toml",
-            border_style="green",
-        )
-    )

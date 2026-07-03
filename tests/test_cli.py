@@ -261,7 +261,7 @@ def test_cli_init_command(mocker) -> None:
     assert isinstance(ConfigBuilder(config), ConfigBuilder)
 
 
-def test_init_helper_select_linter_preferences(mocker) -> None:
+def test_init_helper_apply_interactive_config(mocker) -> None:
     """Test linter preference selection with validation."""
     from sanopy.cli.init_handler import ConfigBuilder
 
@@ -273,13 +273,14 @@ def test_init_helper_select_linter_preferences(mocker) -> None:
         side_effect=["pylint", "bandit"],
     )
 
-    skip, only = builder.select_linter_preferences()
-    assert "pylint" in skip
-    assert "bandit" in only
-    assert "ruff" not in skip
+    result = builder.apply_interactive_config()
+    assert result is None
+    assert "pylint" in config.skip_linters
+    assert "bandit" in config.only_linters
+    assert "ruff" not in config.skip_linters
 
 
-def test_init_helper_select_linter_preferences_invalid(mocker) -> None:
+def test_init_helper_apply_interactive_config_invalid(mocker) -> None:
     """Test that invalid linter names are handled gracefully via public API."""
     from sanopy.cli.init_handler import ConfigBuilder
 
@@ -291,12 +292,13 @@ def test_init_helper_select_linter_preferences_invalid(mocker) -> None:
         side_effect=["ruff,invalid_linter", ""],
     )
 
-    skip, _ = builder.select_linter_preferences()
-    assert "ruff" in skip
-    assert "invalid_linter" not in skip
+    result = builder.apply_interactive_config()
+    assert result is None
+    assert "ruff" in config.skip_linters
+    assert "invalid_linter" not in config.skip_linters
 
 
-def test_init_helper_select_linter_preferences_overlap(mocker) -> None:
+def test_init_helper_apply_interactive_config_overlap(mocker) -> None:
     """Test overlap removal between skip and only linters."""
     from sanopy.cli.init_handler import ConfigBuilder
 
@@ -308,9 +310,36 @@ def test_init_helper_select_linter_preferences_overlap(mocker) -> None:
         side_effect=["ruff,pylint", "pylint,bandit"],
     )
 
-    skip, only = builder.select_linter_preferences()
-    assert "pylint" not in skip
-    assert "pylint" in only
+    result = builder.apply_interactive_config()
+    assert result is None
+    assert "pylint" not in config.skip_linters
+    assert "pylint" in config.only_linters
+
+
+def test_config_builder_has_no_summary_rendering_method() -> None:
+    """ConfigBuilder keeps preference logic only; rendering stays outside."""
+    from sanopy.cli.init_handler import ConfigBuilder
+
+    assert not hasattr(ConfigBuilder, "print_summary")
+
+
+def test_config_summary_printer_renders_setup_and_saved(mocker) -> None:
+    """Summary rendering is handled by dedicated presenter class."""
+    from sanopy.cli.init_handler import ConfigSummaryPrinter
+
+    config = Config(skip_linters=["ruff"], only_linters=["mypy"])
+    print_mock = mocker.patch("sanopy.cli.init_handler.console.print")
+
+    printer = ConfigSummaryPrinter(config)
+    printer.print_setup()
+    printer.print_saved()
+
+    assert print_mock.call_count == 2
+    assert print_mock.call_args_list[0].args[0].title == "Setup Summary"
+    assert (
+        print_mock.call_args_list[1].args[0].title
+        == "Configuration Saved to .sanopy.toml"
+    )
 
 
 @pytest.fixture
