@@ -5,9 +5,10 @@ from pathlib import Path
 
 import click
 
-from sanopy.cli.constants import HUMAN_READABLE_REPORT_FILE, SCAN_RESULT_FILE
 from sanopy.cli.init_handler import handle_init
 from sanopy.cli.scan_handler import handle_scan
+
+HUMAN_READABLE_REPORT_FILE = Path("linting-report.md")
 
 
 @click.group()
@@ -40,14 +41,7 @@ def init(
     "--output",
     type=click.Path(path_type=Path),
     default=None,
-    help=f"Path for the JSON results file (default: {SCAN_RESULT_FILE})",
-)
-@click.option(
-    "-v",
-    "--verbose",
-    is_flag=True,
-    default=False,
-    help="Print a detailed report of every issue found.",
+    help="Optional path for JSON results file. If omitted, JSON is printed to stdout.",
 )
 @click.option(
     "-r",
@@ -65,7 +59,6 @@ def scan(  # vulture: ignore
     only: str | None,
     skip: str | None,
     output: Path | None,
-    verbose: bool,
     human_readable: bool,
 ) -> None:
     """Scan one or more target files o directorios y guarda los resultados.
@@ -85,10 +78,9 @@ def scan(  # vulture: ignore
                     target,
                     only,
                     skip,
-                    make_output_path(
-                        output or SCAN_RESULT_FILE, target, ".json"
-                    ),
-                    verbose,
+                    make_output_path(output, target, ".json")
+                    if output
+                    else None,
                     human_readable,
                     # El human_readable se ajusta dentro de handle_scan
                 )

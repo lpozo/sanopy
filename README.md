@@ -1,6 +1,6 @@
 # Sanopy
 
-Sanopy is a CLI tool for improving Python code quality. It runs multiple linters concurrently and aggregates findings into a single JSON report.
+Sanopy is a CLI tool for improving Python code quality. It runs multiple linters concurrently and emits findings as JSON to stdout.
 
 ## Requirements
 
@@ -34,23 +34,18 @@ sanopy init
 sanopy init --only ruff,mypy --skip bandit
 ```
 
-
 ### 2. Scan a Codebase
 
 ```bash
 sanopy scan src/
 ```
 
+By default, machine-readable JSON is printed to stdout.
+
 You can now scan multiple directories or files at once:
 
 ```bash
 sanopy scan src/ tests/
-```
-
-Verbose output that prints every finding with code context:
-
-```bash
-sanopy scan src/ -v
 ```
 
 Generate a human-readable Markdown report:

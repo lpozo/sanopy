@@ -70,17 +70,49 @@ def test_cli_scan_with_issues(mocker, tmp_path) -> None:
     assert result.exit_code == 0
     assert "Findings Summary" in result.output
     assert "Results saved to" in result.output
-    assert output_file.exists()
-    data = json.loads(output_file.read_text(encoding="utf-8"))
+    expected_output_file = tmp_path / "scan-result-error.json"
+    assert expected_output_file.exists()
+    data = json.loads(expected_output_file.read_text(encoding="utf-8"))
     assert len(data) == 1
     assert data[0]["linter_name"] == "TestLinter"
     assert data[0]["error_code"] == "E1"
 
 
+def test_cli_scan_prints_json_to_stdout_by_default(mocker, tmp_path) -> None:
+    """Test scanning emits JSON to stdout when no output path is provided."""
+    runner = CliRunner()
+    test_file = tmp_path / "error.py"
+    test_file.write_text("import bad\n", encoding="utf-8")
+
+    fake_result = LinterResult(
+        file_path=test_file,
+        line_start=1,
+        line_end=1,
+        col_start=1,
+        col_end=10,
+        linter_name="TestLinter",
+        error_code="E1",
+        message="A test error",
+        snippet_context="import bad",
+    )
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        return_value=[fake_result],
+    )
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(main, ["scan", str(test_file)])
+
+        assert result.exit_code == 0
+        assert '"linter_name": "TestLinter"' in result.output
+        assert not (tmp_path / "scan-result-error.json").exists()
+
+
 def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
     """Test that --human-readable generates markdown and JSON output."""
     import json
-    from pathlib import Path
 
     runner = CliRunner()
     test_file = tmp_path / "error.py"
@@ -118,13 +150,14 @@ def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
         )
 
         assert result.exit_code == 0
-        assert output_file.exists()
+        expected_output_file = tmp_path / "scan-result-error.json"
+        assert expected_output_file.exists()
 
-        data = json.loads(output_file.read_text(encoding="utf-8"))
+        data = json.loads(expected_output_file.read_text(encoding="utf-8"))
         assert len(data) == 1
         assert data[0]["linter_name"] == "TestLinter"
 
-        report_file = Path("linting-report.md")
+        report_file = tmp_path / "linting-report-error.md"
         assert report_file.exists()
         content = report_file.read_text(encoding="utf-8")
         assert "# Linting Report" in content
@@ -134,8 +167,6 @@ def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
 
 def test_cli_scan_human_readable_short_flag(mocker, tmp_path) -> None:
     """Test that -r also generates linting-report.md."""
-    from pathlib import Path
-
     runner = CliRunner()
     test_file = tmp_path / "valid.py"
     test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
@@ -153,45 +184,20 @@ def test_cli_scan_human_readable_short_flag(mocker, tmp_path) -> None:
         )
 
         assert result.exit_code == 0
-        assert output_file.exists()
-        assert Path("linting-report.md").exists()
+        assert (tmp_path / "scan-result-valid.json").exists()
+        assert (tmp_path / "linting-report-valid.md").exists()
 
 
-def test_cli_scan_verbose(mocker, tmp_path) -> None:
-    """Test that --verbose prints per-issue panels."""
+def test_cli_scan_verbose_option_not_available(tmp_path) -> None:
+    """Test that --verbose is not a supported scan option."""
     runner = CliRunner()
     test_file = tmp_path / "error.py"
     test_file.write_text("import bad\n", encoding="utf-8")
 
-    fake_result = LinterResult(
-        file_path=test_file,
-        line_start=3,
-        line_end=3,
-        col_start=5,
-        col_end=10,
-        linter_name="TestLinter",
-        error_code="E1",
-        message="A test error",
-        snippet_context="import bad",
-    )
+    result = runner.invoke(main, ["scan", str(test_file), "--verbose"])
 
-    mocker.patch(
-        "sanopy.cli.scan_handler.Engine.run_all",
-        new_callable=AsyncMock,
-        return_value=[fake_result],
-    )
-
-    output_file = tmp_path / "scan-result.json"
-    result = runner.invoke(
-        main,
-        ["scan", str(test_file), "--output", str(output_file), "--verbose"],
-    )
-
-    assert result.exit_code == 0
-    assert "Issue 1/1" in result.output
-    assert "E1" in result.output
-    assert "A test error" in result.output
-    assert "import bad" in result.output
+    assert result.exit_code != 0
+    assert "No such option: --verbose" in result.output
 
 
 def test_cli_scan_only_filter(mocker, tmp_path) -> None:
@@ -464,7 +470,7 @@ def test_scan_reporter_write_human_readable_report(
     finally:
         os.chdir(old_cwd)
 
-    report = tmp_path / "linting-report.md"
+    report = reporter.get_human_readable_path()
     assert report.exists()
     content = report.read_text(encoding="utf-8")
     assert "# Linting Report" in content

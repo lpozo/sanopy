@@ -4,7 +4,6 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from rich.panel import Panel
 from rich.progress import (
     BarColumn,
     Progress,
@@ -24,8 +23,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     target: Path,
     only: str | None,
     skip: str | None,
-    output: Path,
-    verbose: bool = False,
+    output: Path | None,
     human_readable: bool = False,
 ) -> None:
     """Run all active linters on a target path and write results to JSON.
@@ -40,8 +38,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
             Overrides the ``only_linters`` value from config.
         skip: Optional comma-separated list of linter names to skip.
             Overrides the ``skip_linters`` value from config.
-        output: Path to the JSON file where results will be saved.
-        verbose: When ``True``, prints a detailed panel for every issue found.
+        output: Optional path to a JSON file where results will be saved.
         human_readable: When ``True``, also writes a markdown report to
             ``linting-report.md``.
     """
@@ -77,11 +74,13 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
 
     reporter = ScanReporter(results, target, output)
     if results:
-        reporter.write_summary_report(verbose=verbose)
-    reporter.write_json_report()
+        reporter.write_summary_report()
+    if output:
+        reporter.write_json_report()
     if human_readable:
         reporter.write_human_readable_report()
     reporter.print_fix_hint()
+    reporter.write_json_stdout()
 
 
 def _parse_linter_names(names: str | None, default: list[str]) -> list[str]:
@@ -135,31 +134,44 @@ class ScanReporter:
         self,
         results: list[LinterResult],
         target: Path,
-        output: Path,
+        output: Path | None,
     ) -> None:
         """Initialize reporter with scan results and output paths.
 
         Args:
             results: Sorted linter results.
             target: The scanned file or directory.
-            output: Path to the JSON results file.
+            output: Optional path to the JSON results file.
         """
         self.results = results
         self.target = target
         self.output = output
 
+    def _serialize_results(self) -> str:
+        """Return deterministic JSON serialization for scan results."""
+        return json.dumps([r.to_dict() for r in self.results], indent=2)
+
     def write_json_report(self) -> None:
         """Write scan results as deterministic JSON output."""
-        self.output.write_text(
-            json.dumps([r.to_dict() for r in self.results], indent=2),
-            encoding="utf-8",
-        )
+        if not self.output:
+            return
+        self.output.write_text(self._serialize_results(), encoding="utf-8")
         console.print(
             f"\n[bold green]Results saved to {self.output}[/bold green]"
         )
 
+    def write_json_stdout(self) -> None:
+        """Write deterministic JSON output to stdout for automation."""
+        console.file.write(self._serialize_results() + "\n")
+
     def get_human_readable_path(self) -> Path:
         """Return the markdown report path for the current scan target."""
+        if self.output is None:
+            target_name = (
+                self.target.stem if self.target.is_file() else self.target.name
+            )
+            report_name = f"linting-report-{target_name}.md"
+            return Path(report_name)
         target_name = (
             self.target.stem if self.target.is_file() else self.target.name
         )
@@ -227,12 +239,12 @@ class ScanReporter:
     def print_fix_hint(self) -> None:
         """Print the next-step hint after a scan."""
         console.print(
-            "[dim]Use the JSON report to review findings or feed other "
+            "[dim]Use the JSON output to review findings or feed other "
             "automation.[/dim]"
         )
 
-    def write_summary_report(self, *, verbose: bool = False) -> None:
-        """Print a findings summary table and optional verbose details."""
+    def write_summary_report(self) -> None:
+        """Print a findings summary table."""
         counts: Counter[str] = Counter(r.linter_name for r in self.results)
 
         table = Table(
@@ -245,24 +257,3 @@ class ScanReporter:
             table.add_row(linter, str(count))
 
         console.print(table)
-
-        if verbose:
-            for idx, result in enumerate(self.results):
-                location = f"{result.file_path}:{result.line_start}"
-                if result.col_start is not None:
-                    location += f":{result.col_start}"
-                console.print(
-                    Panel(
-                        f"[bold]{result.linter_name}[/bold] "
-                        f"[{result.error_code}] "
-                        f"[yellow]{location}[/yellow]\n\n"
-                        f"{result.message}"
-                        + (
-                            f"\n\n[dim]{result.snippet_context}[/dim]"
-                            if result.snippet_context
-                            else ""
-                        ),
-                        title=f"Issue {idx + 1}/{len(self.results)}",
-                        border_style="red",
-                    )
-                )
