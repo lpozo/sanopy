@@ -10,34 +10,84 @@ from sanopy.linters import LINTER_MAP
 
 def handle_init(only: str | None = None, skip: str | None = None) -> None:
     """Execute the initialization flow (interactive or non-interactive)."""
-    config = Config.load()
-    builder = ConfigBuilder(config)
-    printer = ConfigSummaryPrinter(config)
+    handler = InitHandler()
 
     if only is not None or skip is not None:
-        builder.apply_cli_config(only=only, skip=skip)
-        config.save()
-        printer.print_saved()
+        handler.handle_cli_options(only=only, skip=skip)
         return
 
-    console.print("[bold]Sanopy Setup Wizard[/bold]\n")
-    builder.apply_interactive_config()
-    printer.print_setup()
-    if not click.confirm("Save this configuration?", default=True):
-        console.print(
-            "[yellow]Setup cancelled. No changes were saved.[/yellow]"
+    handler.handle_interactive_options()
+
+
+class InitHandler:
+    """Coordinate init command flows for CLI and interactive modes."""
+
+    def __init__(self) -> None:
+        """Initialize with the project config loaded from disk."""
+        self.config = Config.load()
+        self.updater = ConfigUpdater(self.config)
+
+    def handle_cli_options(
+        self, *, only: str | None = None, skip: str | None = None
+    ) -> None:
+        """Handle non-interactive configuration from CLI options."""
+        self.updater.apply_cli_config(only=only, skip=skip)
+
+        self.config.save()
+        self.print_saved_summary()
+
+    def handle_interactive_options(self) -> None:
+        """Handle interactive configuration prompts and confirmation."""
+        console.print("[bold]Sanopy Setup Wizard[/bold]\n")
+        self.updater.apply_interactive_config()
+        self.print_setup_summary()
+        if not click.confirm("Save this configuration?", default=True):
+            console.print(
+                "[yellow]Setup cancelled. No changes were saved.[/yellow]"
+            )
+            return
+
+        self.config.save()
+        self.print_saved_summary()
+
+    def print_setup_summary(self) -> None:
+        """Print setup summary before asking for confirmation."""
+        self._print_config_summary(title="Setup Summary", border_style="cyan")
+
+    def print_saved_summary(self) -> None:
+        """Print a success panel with the saved linter configuration."""
+        self._print_config_summary(
+            title="Configuration Saved to .sanopy.toml",
+            border_style="green",
         )
-        return
 
-    config.save()
-    printer.print_saved()
+    def _print_config_summary(self, *, title: str, border_style: str) -> None:
+        """Print a panel with current skip/only linter configuration."""
+        skip_str = (
+            ", ".join(self.config.skip_linters)
+            if self.config.skip_linters
+            else "None"
+        )
+        only_str = (
+            ", ".join(self.config.only_linters)
+            if self.config.only_linters
+            else "All"
+        )
+        console.print(
+            Panel(
+                f"Skip Linters: [bold]{skip_str}[/bold]\n"
+                f"Only Linters: [bold]{only_str}[/bold]",
+                title=title,
+                border_style=border_style,
+            )
+        )
 
 
-class ConfigBuilder:
-    """Interactive builder for linter configuration via CLI prompts."""
+class ConfigUpdater:
+    """Apply CLI and interactive updates to linter configuration."""
 
     def __init__(self, config: Config) -> None:
-        """Initialize builder with a Config object.
+        """Initialize updater with a Config object.
 
         Args:
             config: The base configuration to build upon.
@@ -135,46 +185,3 @@ class ConfigBuilder:
             ]
 
         return skip_linters, only_linters
-
-
-class ConfigSummaryPrinter:
-    """Render config summaries for setup and save flows."""
-
-    def __init__(self, config: Config) -> None:
-        """Initialize the summary printer with the config to display."""
-        self.config = config
-
-    def print_setup(self) -> None:
-        """Print setup summary before asking for confirmation."""
-        self._print_config_summary(
-            title="Setup Summary",
-            border_style="cyan",
-        )
-
-    def print_saved(self) -> None:
-        """Print a success panel with the saved linter configuration."""
-        self._print_config_summary(
-            title="Configuration Saved to .sanopy.toml",
-            border_style="green",
-        )
-
-    def _print_config_summary(self, *, title: str, border_style: str) -> None:
-        """Print a panel with current skip/only linter configuration."""
-        skip_str = (
-            ", ".join(self.config.skip_linters)
-            if self.config.skip_linters
-            else "None"
-        )
-        only_str = (
-            ", ".join(self.config.only_linters)
-            if self.config.only_linters
-            else "All"
-        )
-        console.print(
-            Panel(
-                f"Skip Linters: [bold]{skip_str}[/bold]\n"
-                f"Only Linters: [bold]{only_str}[/bold]",
-                title=title,
-                border_style=border_style,
-            )
-        )

@@ -239,7 +239,7 @@ def test_cli_scan_skip_filter(mocker, tmp_path) -> None:
 
 def test_cli_init_command(mocker) -> None:
     """Test linter-only init command flow."""
-    from sanopy.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigUpdater
 
     runner = CliRunner()
     config = Config()
@@ -258,23 +258,82 @@ def test_cli_init_command(mocker) -> None:
     assert "Configuration Saved" in result.output
     assert config.skip_linters == ["ruff"]
     assert config.only_linters == ["mypy"]
-    assert isinstance(ConfigBuilder(config), ConfigBuilder)
+    assert isinstance(ConfigUpdater(config), ConfigUpdater)
+
+
+def test_init_handler_handles_cli_options(mocker) -> None:
+    """InitHandler handles non-interactive CLI-provided options."""
+    from sanopy.cli.init_handler import InitHandler
+
+    config = Config()
+    load_mock = mocker.patch(
+        "sanopy.cli.init_handler.Config.load", return_value=config
+    )
+    save_mock = mocker.patch.object(Config, "save")
+    apply_cli_config_mock = mocker.patch(
+        "sanopy.cli.init_handler.ConfigUpdater.apply_cli_config"
+    )
+    print_saved_mock = mocker.patch(
+        "sanopy.cli.init_handler.InitHandler.print_saved_summary"
+    )
+
+    handler = InitHandler()
+    handler.handle_cli_options(only="ruff", skip="mypy")
+
+    load_mock.assert_called_once_with()
+    apply_cli_config_mock.assert_called_once_with(only="ruff", skip="mypy")
+    save_mock.assert_called_once()
+    print_saved_mock.assert_called_once_with()
+
+
+def test_init_handler_handles_interactive_cancel(mocker) -> None:
+    """InitHandler exits without saving when interactive flow is canceled."""
+    from sanopy.cli.init_handler import InitHandler
+
+    config = Config()
+    load_mock = mocker.patch(
+        "sanopy.cli.init_handler.Config.load", return_value=config
+    )
+    save_mock = mocker.patch.object(Config, "save")
+    apply_interactive_mock = mocker.patch(
+        "sanopy.cli.init_handler.ConfigUpdater.apply_interactive_config"
+    )
+    print_setup_mock = mocker.patch(
+        "sanopy.cli.init_handler.InitHandler.print_setup_summary"
+    )
+    print_saved_mock = mocker.patch(
+        "sanopy.cli.init_handler.InitHandler.print_saved_summary"
+    )
+    confirm_mock = mocker.patch(
+        "sanopy.cli.init_handler.click.confirm", return_value=False
+    )
+
+    handler = InitHandler()
+    handler.handle_interactive_options()
+
+    load_mock.assert_called_once_with()
+    apply_interactive_mock.assert_called_once_with()
+    print_setup_mock.assert_called_once_with()
+    confirm_mock.assert_called_once_with(
+        "Save this configuration?", default=True
+    )
+    save_mock.assert_not_called()
+    print_saved_mock.assert_not_called()
 
 
 def test_init_helper_apply_interactive_config(mocker) -> None:
     """Test linter preference selection with validation."""
-    from sanopy.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigUpdater
 
     config = Config(skip_linters=["ruff"], only_linters=[])
-    builder = ConfigBuilder(config)
+    updater = ConfigUpdater(config)
 
     mocker.patch(
         "sanopy.cli.init_handler.click.prompt",
         side_effect=["pylint", "bandit"],
     )
 
-    result = builder.apply_interactive_config()
-    assert result is None
+    updater.apply_interactive_config()
     assert "pylint" in config.skip_linters
     assert "bandit" in config.only_linters
     assert "ruff" not in config.skip_linters
@@ -282,64 +341,76 @@ def test_init_helper_apply_interactive_config(mocker) -> None:
 
 def test_init_helper_apply_interactive_config_invalid(mocker) -> None:
     """Test that invalid linter names are handled gracefully via public API."""
-    from sanopy.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigUpdater
 
     config = Config()
-    builder = ConfigBuilder(config)
+    updater = ConfigUpdater(config)
 
     mocker.patch(
         "sanopy.cli.init_handler.click.prompt",
         side_effect=["ruff,invalid_linter", ""],
     )
 
-    result = builder.apply_interactive_config()
-    assert result is None
+    updater.apply_interactive_config()
     assert "ruff" in config.skip_linters
     assert "invalid_linter" not in config.skip_linters
 
 
 def test_init_helper_apply_interactive_config_overlap(mocker) -> None:
     """Test overlap removal between skip and only linters."""
-    from sanopy.cli.init_handler import ConfigBuilder
+    from sanopy.cli.init_handler import ConfigUpdater
 
     config = Config()
-    builder = ConfigBuilder(config)
+    updater = ConfigUpdater(config)
 
     mocker.patch(
         "sanopy.cli.init_handler.click.prompt",
         side_effect=["ruff,pylint", "pylint,bandit"],
     )
 
-    result = builder.apply_interactive_config()
-    assert result is None
+    updater.apply_interactive_config()
     assert "pylint" not in config.skip_linters
     assert "pylint" in config.only_linters
 
 
-def test_config_builder_has_no_summary_rendering_method() -> None:
-    """ConfigBuilder keeps preference logic only; rendering stays outside."""
-    from sanopy.cli.init_handler import ConfigBuilder
+def test_config_updater_has_no_summary_rendering_method() -> None:
+    """ConfigUpdater keeps preference logic only; rendering stays outside."""
+    from sanopy.cli.init_handler import ConfigUpdater
 
-    assert not hasattr(ConfigBuilder, "print_summary")
+    assert not hasattr(ConfigUpdater, "print_summary")
 
 
 def test_config_summary_printer_renders_setup_and_saved(mocker) -> None:
-    """Summary rendering is handled by dedicated presenter class."""
-    from sanopy.cli.init_handler import ConfigSummaryPrinter
+    """Summary rendering is handled by InitHandler methods."""
+    from sanopy.cli.init_handler import InitHandler
 
     config = Config(skip_linters=["ruff"], only_linters=["mypy"])
+    load_mock = mocker.patch(
+        "sanopy.cli.init_handler.Config.load", return_value=config
+    )
     print_mock = mocker.patch("sanopy.cli.init_handler.console.print")
 
-    printer = ConfigSummaryPrinter(config)
-    printer.print_setup()
-    printer.print_saved()
+    handler = InitHandler()
+    handler.print_setup_summary()
+    handler.print_saved_summary()
 
+    load_mock.assert_called_once_with()
     assert print_mock.call_count == 2
     assert print_mock.call_args_list[0].args[0].title == "Setup Summary"
     assert (
         print_mock.call_args_list[1].args[0].title
         == "Configuration Saved to .sanopy.toml"
     )
+
+
+def test_init_handler_constructor_has_no_config_parameter() -> None:
+    """InitHandler constructor should not expose config injection."""
+    import inspect
+
+    from sanopy.cli.init_handler import InitHandler
+
+    signature = inspect.signature(InitHandler.__init__)
+    assert "config" not in signature.parameters
 
 
 @pytest.fixture
