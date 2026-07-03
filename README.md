@@ -10,40 +10,59 @@ Sanopy is a CLI tool for improving Python code quality. It runs multiple linters
 ## Installation
 
 ```bash
+pip install sanopy
+
+# Optional with uv
 uv venv .venv
-uv add sanopy
+uv pip install sanopy
 ```
 
 ## Quick Start
 
-### 1. Initialize
+### 1. Configure
+
+Sanopy always uses a local `.sanopy.toml` in the current project.
+
+- If `.sanopy.toml` does not exist, Sanopy creates it automatically with defaults.
+- Use `init` to customize settings manually or in automation.
 
 ```bash
-uv run sanopy init
+# Interactive (manual)
+sanopy init
+
+# Non-interactive (CI/automation)
+sanopy init --only ruff,mypy --skip bandit
 ```
+
 
 ### 2. Scan a Codebase
 
 ```bash
-uv run sanopy scan src/
+sanopy scan src/
+```
+
+You can now scan multiple directories or files at once:
+
+```bash
+sanopy scan src/ tests/
 ```
 
 Verbose output that prints every finding with code context:
 
 ```bash
-uv run sanopy scan src/ -v
+sanopy scan src/ -v
 ```
 
 Generate a human-readable Markdown report:
 
 ```bash
-uv run sanopy scan src/ --human-readable
+sanopy scan src/ --human-readable
 ```
 
 Save results to a custom file:
 
 ```bash
-uv run sanopy scan src/ -o my-scan.json
+sanopy scan src/ -o my-scan.json
 ```
 
 ## Linter Filtering
@@ -51,17 +70,17 @@ uv run sanopy scan src/ -o my-scan.json
 Run only selected linters:
 
 ```bash
-uv run sanopy scan . --only ruff,mypy
+sanopy scan . --only ruff,mypy
 ```
 
 Skip selected linters:
 
 ```bash
-uv run sanopy scan . --skip safety
+sanopy scan . --skip safety
 ```
 
 You can also set default `only_linters` and `skip_linters` values in
-`sanopy.toml` via `uv run sanopy init`.
+`.sanopy.toml` via `sanopy init`.
 
 ## Supported Linters
 
@@ -79,7 +98,21 @@ You can also set default `only_linters` and `skip_linters` values in
 
 ## Configuration File
 
-The `sanopy.toml` file (created by `sanopy init`) controls linter defaults.
+The `.sanopy.toml` file controls linter defaults for the current project.
+
+- Manual workflow: run `sanopy init` and answer prompts.
+- CI/AI workflow: run `sanopy init --only ... --skip ...` in scripts.
+- If the file is missing, Sanopy creates `.sanopy.toml` with defaults.
+
+Example CI step:
+
+```yaml
+steps:
+  - name: Configure Sanopy
+    run: sanopy init --only ruff,mypy --skip bandit
+  - name: Run scan
+    run: sanopy scan src/ tests/
+```
 
 ## Development
 

@@ -79,19 +79,26 @@ disable = [
 [tool.vulture]
 ignore_decorators = ["@main.command", "@click.command", "@click.group"]
 ignore_names = [
-    "*Linter",
-    "mock_*",
-    "test_*",
-    "mocker",
-    "tmp_path",
-    "AsyncMock",
-    "MagicMock",
     "_mock_get_context",
-    "MockLinter",
-    "process_result",
-    "side_effect",
+    "_mock_scan_config",
+    "BanditLinter",
+    "MyPyLinter",
+    "PylintLinter",
+    "PyrightLinter",
+    "RadonLinter",
+    "RuffLinter",
+    "SafetyLinter",
+    "SemgrepLinter",
+    "VultureLinter",
     "build_command",
+    "format",
+    "from_dict",
     "parse_output",
+    "process_result",
+    "scan_project",
+    "snippet_start_line",
+    "semantic_context",
+    "target_config",
 ]
 
 [tool.pyright]

@@ -1,0 +1,3 @@
+[linters]
+only_linters = []
+skip_linters = []
