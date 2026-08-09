@@ -145,3 +145,54 @@ def test_config_load_safety_only(tmp_path) -> None:
     assert loaded.ignored_cves == ["CVE-1", "CVE-2"]
     assert not loaded.only_linters
     assert not loaded.skip_linters
+
+
+@pytest.mark.parametrize(
+    "ignore_vulns, expected",
+    [
+        # Defaults
+        (None, None),
+        # Uppercased and deduplicated
+        (
+            ["pysec-2026-3482", "PYSEC-2026-3482"],
+            ["PYSEC-2026-3482"],
+        ),
+        # Explicit empty list is preserved
+        ([], []),
+    ],
+)
+def test_config_roundtrip_pip_audit_ignore_vulns(
+    tmp_path, ignore_vulns, expected
+) -> None:
+    """Test that pip-audit ignore list round-trips through save/load."""
+    config_file = tmp_path / "sanopy.toml"
+    Config(ignore_vulns=ignore_vulns).save(config_file)
+
+    loaded = Config.load(config_file)
+
+    assert loaded.ignore_vulns == expected
+
+
+def test_config_save_writes_pip_audit_section(tmp_path) -> None:
+    """Test that save writes the [pip-audit] section."""
+    config_file = tmp_path / "sanopy.toml"
+    Config(ignore_vulns=["PYSEC-1"]).save(config_file)
+
+    content = config_file.read_text(encoding="utf-8")
+    assert "[pip-audit]" in content
+    assert "ignore_vulns = ['PYSEC-1']" in content
+
+
+def test_config_load_pip_audit_only(tmp_path) -> None:
+    """Test loading a config with only a [pip-audit] section."""
+    config_file = tmp_path / "test.toml"
+    config_file.write_text(
+        '[pip-audit]\nignore_vulns = ["pysec-2026-3482"]\n',
+        encoding="utf-8",
+    )
+
+    loaded = Config.load(config_file)
+
+    assert loaded.ignore_vulns == ["PYSEC-2026-3482"]
+    assert not loaded.only_linters
+    assert not loaded.skip_linters
