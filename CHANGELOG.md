@@ -19,9 +19,19 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Context-aware configuration: production and test code receive separate rule sets automatically based on the target path.
 - Linter command execution abstracted to support both `uv` and system Python environments.
 - CLI modularized into dedicated command handlers (`scan_handler`, `init_handler`).
-- Configuration management backed by TOML and environment variables, with `sanopy init` for interactive setup.
+- Configuration management backed by TOML, with `sanopy init` for interactive setup.
 - Improved CLI help text for all commands and options.
 - Google-style docstrings across the entire codebase.
 - `Attributes:` sections in all dataclass docstrings.
 - Configuration discovery validates `[tool.<linter>]` sections in `pyproject.toml` to correctly detect local configs.
 - Ruff test glob set to `tests/**/*.py` for broader rule matching in test files.
+
+### Changed
+
+- Configurable Safety CVE suppressions via the `[safety] ignore_cves` setting in `.sanopy.toml`, replacing the hardcoded suppression in the Safety linter.
+
+### Fixed
+
+- Config status messages now use rich output on stderr, keeping machine JSON output on stdout clean.
+- Corrected the `-r`/`--human-readable` help text to match the actual report filename (`linting-report-<target>.md`).
+- Translated leftover non-English CLI docstrings and comments to English.

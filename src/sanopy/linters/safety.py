@@ -7,11 +7,25 @@ from pathlib import Path
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.result import LinterResult
 
+# Known CVEs that cannot be resolved through the dependency tree.
+DEFAULT_IGNORED_CVES = ["CVE-2026-0994"]
+
 
 class SafetyLinter(BaseLinter):
     """Linter implementation for Safety (Dependency vulnerability scanner)."""
 
     name = "Safety"
+
+    def __init__(self, ignored_cves: list[str] | None = None) -> None:
+        """Initialize the Safety linter.
+
+        Args:
+            ignored_cves: Optional list of CVE IDs to suppress. Defaults to
+                ``DEFAULT_IGNORED_CVES`` when ``None``.
+        """
+        self.ignored_cves = (
+            DEFAULT_IGNORED_CVES if ignored_cves is None else ignored_cves
+        )
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Safety command.
@@ -59,9 +73,8 @@ class SafetyLinter(BaseLinter):
             advisory = vuln.get("advisory", "No details available.")
             severity = vuln.get("severity") or "UNKNOWN"
 
-            # Suppress unresolvable protobuf vulnerability blocked
-            # by dependency tree
-            if cve == "CVE-2026-0994":
+            # Skip any CVE IDs the user has chosen to suppress
+            if cve in self.ignored_cves:
                 continue
 
             message = (

@@ -98,6 +98,67 @@ async def test_safety_scenarios(
         assert results[0].file_path == Path("pyproject.toml")
 
 
+@pytest.mark.asyncio
+async def test_safety_default_suppresses_known_cve(mocker) -> None:
+    """CVE-2026-0994 is suppressed by the built-in default list."""
+    output = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "vulnerability_id": "85152",
+                    "package_name": "protobuf",
+                    "analyzed_version": "6.0.0",
+                    "CVE": "CVE-2026-0994",
+                    "severity": "CRITICAL",
+                    "advisory": "Test advisory.",
+                }
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=output, stderr="", returncode=0)
+    mocker.patch.object(SafetyLinter, "_run_command", return_value=mock_result)
+
+    results = await SafetyLinter().run(Path("pyproject.toml"))
+
+    assert results == []
+
+
+@pytest.mark.parametrize(
+    "ignored_cves, expected_count",
+    [
+        (["CVE-2024-TEST"], 0),
+        ([], 1),
+    ],
+)
+@pytest.mark.asyncio
+async def test_safety_ignored_cves_override(
+    mocker, ignored_cves, expected_count
+) -> None:
+    """A custom ignore list replaces the built-in default suppressions."""
+    output = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "vulnerability_id": "85151",
+                    "package_name": "protobuf",
+                    "analyzed_version": "4.25.9",
+                    "CVE": "CVE-2024-TEST",
+                    "severity": "HIGH",
+                    "advisory": "DoS via recursion depth bypass.",
+                }
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=output, stderr="", returncode=0)
+    mocker.patch.object(SafetyLinter, "_run_command", return_value=mock_result)
+
+    results = await SafetyLinter(ignored_cves=ignored_cves).run(
+        Path("pyproject.toml")
+    )
+
+    assert len(results) == expected_count
+
+
 class TestExtractJson:
     """Tests for the _extract_json helper."""
 

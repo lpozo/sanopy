@@ -46,7 +46,12 @@ envelope:
 ```json
 {
   "schema_version": "1.0.0",
-  "run": {"target": "src", "finding_count": 0},
+  "run": {
+    "target": "src",
+    "generated_at": "2026-08-09T00:00:00+00:00",
+    "active_linters": ["ruff", "pylint", "mypy"],
+    "finding_count": 0
+  },
   "findings": []
 }
 ```
@@ -68,6 +73,9 @@ Generate a human-readable Markdown report:
 ```bash
 sanopy scan src/ --human-readable
 ```
+
+The report is saved as `linting-report-<target>.md` (e.g.,
+`linting-report-src.md`).
 
 Save results to a custom file:
 
@@ -113,6 +121,19 @@ The `.sanopy.toml` file controls linter defaults for the current project.
 - Manual workflow: run `sanopy init` and answer prompts.
 - CI/AI workflow: run `sanopy init --only ... --skip ...` in scripts.
 - If the file is missing, Sanopy creates `.sanopy.toml` with defaults.
+
+```toml
+[linters]
+only_linters = []
+skip_linters = []
+
+[safety]
+ignore_cves = ["CVE-2026-0994"]
+```
+
+The `[safety]` section lists CVE IDs that the Safety linter should
+suppress. By default a small set of known-unresolvable CVEs is ignored;
+set `ignore_cves = []` to disable all suppressions.
 
 Example CI step:
 

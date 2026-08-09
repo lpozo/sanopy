@@ -71,3 +71,25 @@ def test_config_whitespace_only_linter_entries(tmp_path) -> None:
     Config(skip_linters=["ruff", "  ", "\t", "pylint"]).save(config_file)
     loaded = Config.load(config_file)
     assert loaded.skip_linters == ["ruff", "pylint"]
+
+
+def test_config_ignored_cves_roundtrip(tmp_path) -> None:
+    """Test that [safety] ignore_cves round-trips through save/load."""
+    config_file = tmp_path / "test.toml"
+    Config(ignored_cves=["cve-2026-0994", "CVE-2026-0994"]).save(config_file)
+
+    content = config_file.read_text(encoding="utf-8")
+    assert "[safety]" in content
+    assert "ignore_cves" in content
+
+    loaded = Config.load(config_file)
+    assert loaded.ignored_cves == ["CVE-2026-0994"]
+
+
+def test_config_ignored_cves_default(tmp_path) -> None:
+    """Test that a missing [safety] section yields None."""
+    config_file = tmp_path / "test.toml"
+    Config().save(config_file)
+
+    loaded = Config.load(config_file)
+    assert loaded.ignored_cves is None

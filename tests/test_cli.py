@@ -313,6 +313,26 @@ def test_cli_scan_skip_filter(mocker, tmp_path) -> None:
     assert "SafetyLinter" in remaining_names
 
 
+def test_cli_scan_safety_receives_ignored_cves(mocker, tmp_path) -> None:
+    """Safety linter is built with config-supplied ignored CVEs."""
+    runner = CliRunner()
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("print(1)\n", encoding="utf-8")
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Config.load",
+        return_value=Config(ignored_cves=["CVE-2026-0994"]),
+    )
+    mock_engine = mocker.patch("sanopy.cli.scan_handler.Engine")
+
+    runner.invoke(main, ["scan", str(test_file), "--only", "safety"])
+
+    args, kwargs = mock_engine.call_args
+    linters = kwargs.get("linters", []) or (args[0] if args else [])
+    assert len(linters) == 1
+    assert linters[0].ignored_cves == ["CVE-2026-0994"]
+
+
 def test_cli_init_command(mocker) -> None:
     """Test linter-only init command flow."""
     from sanopy.cli.init_handler import ConfigUpdater
