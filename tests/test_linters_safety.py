@@ -152,9 +152,7 @@ async def test_safety_missing_fields_fallbacks(mocker, linter) -> None:
     assert "No details available." in result.message
 
 
-@pytest.mark.parametrize(
-    "severity", [None, ""], ids=["none", "empty-string"]
-)
+@pytest.mark.parametrize("severity", [None, ""], ids=["none", "empty-string"])
 @pytest.mark.asyncio
 async def test_safety_severity_fallback(mocker, linter, severity) -> None:
     """Test that a missing/empty severity becomes UNKNOWN."""

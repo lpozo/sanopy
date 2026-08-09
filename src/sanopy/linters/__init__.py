@@ -50,4 +50,4 @@ __all__ = ["BaseLinter", "Engine", "LinterResult", "LINTER_MAP"]
 # Also export individual linter classes for backward compatibility
 for _linter_cls in LINTER_MAP.values():
     globals()[_linter_cls.__name__] = _linter_cls
-    __all__.append(_linter_cls.__name__)
+    __all__.append(_linter_cls.__name__)  # pyright: ignore[reportUnsupportedDunderAll]

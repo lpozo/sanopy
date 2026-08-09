@@ -118,9 +118,7 @@ async def test_pylint_parses_fields(mocker, linter) -> None:
 
 
 @pytest.mark.parametrize("config_present", [False, True])
-def test_pylint_build_command(
-    mocker, tmp_path, config_present: bool
-) -> None:
+def test_pylint_build_command(mocker, tmp_path, config_present: bool) -> None:
     """Test that the Pylint command includes the rcfile when available."""
     target = tmp_path / "mod.py"
     target.write_text("x = 1\n", encoding="utf-8")

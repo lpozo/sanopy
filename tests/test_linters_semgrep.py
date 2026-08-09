@@ -58,9 +58,7 @@ def linter() -> SemgrepLinter:
         ("semgrep crashed", 0, None),
         # Missing optional fields fall back to defaults
         (
-            json.dumps(
-                {"results": [{"check_id": "rule.id.missing-fields"}]}
-            ),
+            json.dumps({"results": [{"check_id": "rule.id.missing-fields"}]}),
             1,
             "rule.id.missing-fields",
         ),

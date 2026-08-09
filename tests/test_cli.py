@@ -19,6 +19,23 @@ def _mock_scan_config(mocker):
     )
 
 
+def _assert_stdout_finding(finding: dict[str, object], test_file) -> None:
+    """Assert the machine-readable shape of a stdout scan finding."""
+    assert finding["id"]
+    assert finding["message"] == "A test error"
+    assert finding["linter"] == {
+        "name": "TestLinter",
+        "rule_id": "E1",
+        "raw_severity": None,
+        "normalized_severity": "error",
+    }
+    assert finding["location"] == {
+        "path": str(test_file),
+        "start": {"line": 1, "column": 1},
+        "end": {"line": 1, "column": 10},
+    }
+
+
 def test_cli_scan_no_issues(mocker, tmp_path) -> None:
     """Test machine-mode scan emits schema envelope with no findings."""
     import json
@@ -124,17 +141,7 @@ def test_cli_scan_prints_json_to_stdout_by_default(mocker, tmp_path) -> None:
         payload = json.loads(result.output)
         assert payload["schema_version"] == "1.0.0"
         assert payload["run"]["finding_count"] == 1
-        finding = payload["findings"][0]
-        assert finding["id"]
-        assert finding["message"] == "A test error"
-        assert finding["linter"]["name"] == "TestLinter"
-        assert finding["linter"]["rule_id"] == "E1"
-        assert finding["linter"]["normalized_severity"] == "error"
-        assert finding["location"]["path"] == str(test_file)
-        assert finding["location"]["start"]["line"] == 1
-        assert finding["location"]["start"]["column"] == 1
-        assert finding["location"]["end"]["line"] == 1
-        assert finding["location"]["end"]["column"] == 10
+        _assert_stdout_finding(payload["findings"][0], test_file)
         assert not (tmp_path / "scan-result-error.json").exists()
 
 
@@ -256,6 +263,53 @@ def test_cli_scan_returns_exit_code_2_on_scan_failure(
     result = runner.invoke(main, ["scan", str(test_file)])
 
     assert result.exit_code == 2
+
+
+def test_cli_scan_multiple_targets_emits_single_json(mocker, tmp_path) -> None:
+    """Test that multi-target stdout scans produce one valid JSON document."""
+    import json
+
+    runner = CliRunner()
+    first_file = tmp_path / "first.py"
+    first_file.write_text("x = 1\n", encoding="utf-8")
+    second_file = tmp_path / "second.py"
+    second_file.write_text("y = 2\n", encoding="utf-8")
+
+    fake_result = LinterResult(
+        file_path=first_file,
+        line_start=1,
+        line_end=1,
+        col_start=1,
+        col_end=2,
+        linter_name="TestLinter",
+        error_code="E1",
+        message="A test error",
+    )
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        return_value=[fake_result],
+    )
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            main, ["scan", str(first_file), str(second_file)]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["schema_version"] == "1.0.0"
+        assert payload["run"]["target"] == [
+            str(first_file),
+            str(second_file),
+        ]
+        assert payload["run"]["finding_count"] == 2
+        assert len(payload["findings"]) == 2
+        assert all(
+            finding["linter"]["name"] == "TestLinter"
+            for finding in payload["findings"]
+        )
 
 
 def test_cli_scan_verbose_option_not_available(tmp_path) -> None:

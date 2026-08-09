@@ -151,7 +151,10 @@ def test_find_context_bounds_fallback(
     ],
 )
 def test_extract_symbols(
-    tmp_path, content: str, expected_names: list, expected_kinds: list
+    tmp_path,
+    content: str,
+    expected_names: list[str],
+    expected_kinds: list[str],
 ) -> None:
     """Test extraction of top-level public symbols."""
     test_file = _write(tmp_path, "syms.py", content)
@@ -186,7 +189,7 @@ def test_extract_symbols_binary_file(tmp_path) -> None:
     test_file = tmp_path / "binary.py"
     test_file.write_bytes(b"\xff\xfe\xfd")
 
-    assert SourceAnalyzer.extract_symbols(test_file) == []
+    assert not SourceAnalyzer.extract_symbols(test_file)
 
 
 @pytest.mark.parametrize(
@@ -212,10 +215,10 @@ def test_extract_symbols_binary_file(tmp_path) -> None:
 )
 def test_project_scanner_scan_directory(
     tmp_path,
-    files: dict,
-    expected_tree: list,
-    expected_symbols: list,
-    expected_config_keys: list,
+    files: dict[str, str],
+    expected_tree: list[str],
+    expected_symbols: list[str],
+    expected_config_keys: list[str],
 ) -> None:
     """Test scanning a project directory."""
     project = tmp_path / "my_project"
@@ -245,9 +248,9 @@ def test_project_scanner_scan_empty_directory(tmp_path) -> None:
     """Test scanning an empty directory."""
     summary = ProjectScanner.scan_project(tmp_path)
 
-    assert summary.file_tree == []
-    assert summary.public_symbols == []
-    assert summary.target_config == {}
+    assert not summary.file_tree
+    assert not summary.public_symbols
+    assert not summary.target_config
 
 
 @pytest.mark.parametrize(
@@ -273,7 +276,10 @@ def test_project_scanner_scan_empty_directory(tmp_path) -> None:
     ],
 )
 def test_project_scanner_parse_config(
-    tmp_path, toml_content: str, expected_keys: list, unexpected_keys: list
+    tmp_path,
+    toml_content: str,
+    expected_keys: list[str],
+    unexpected_keys: list[str],
 ) -> None:
     """Test parsing linter sections from pyproject.toml."""
     (tmp_path / "pyproject.toml").write_text(toml_content, encoding="utf-8")
@@ -288,7 +294,7 @@ def test_project_scanner_parse_config(
 
 def test_project_scanner_parse_config_missing_file(tmp_path) -> None:
     """Test parsing config when pyproject.toml does not exist."""
-    assert ProjectScanner.parse_config(tmp_path) == {}
+    assert not ProjectScanner.parse_config(tmp_path)
 
 
 @pytest.mark.parametrize(

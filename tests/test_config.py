@@ -115,7 +115,7 @@ def test_config_invalid_file_resets_to_defaults(
     assert config.ignored_cves is None
     # The file is overwritten with valid defaults
     reloaded = Config.load(config_file)
-    assert reloaded.only_linters == []
+    assert not reloaded.only_linters
 
 
 def test_config_ignores_unknown_linter_keys(tmp_path) -> None:
@@ -143,5 +143,5 @@ def test_config_load_safety_only(tmp_path) -> None:
     loaded = Config.load(config_file)
 
     assert loaded.ignored_cves == ["CVE-1", "CVE-2"]
-    assert loaded.only_linters == []
-    assert loaded.skip_linters == []
+    assert not loaded.only_linters
+    assert not loaded.skip_linters

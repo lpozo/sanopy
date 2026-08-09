@@ -80,7 +80,9 @@ MINIMAL_RESULT = LinterResult(
         ),
     ],
 )
-def test_linter_result_fields(result: LinterResult, expected: dict) -> None:
+def test_linter_result_fields(
+    result: LinterResult, expected: dict[str, object]
+) -> None:
     """Test that all fields are exposed with the correct values/defaults."""
     for field_name, expected_value in expected.items():
         assert getattr(result, field_name) == expected_value
@@ -105,17 +107,20 @@ def test_linter_result_to_dict(
 
     assert data["file_path"] == expected_path
     assert isinstance(data["file_path"], str)
-    assert data["line_start"] == result.line_start
-    assert data["line_end"] == result.line_end
-    assert data["col_start"] == result.col_start
-    assert data["col_end"] == result.col_end
-    assert data["linter_name"] == result.linter_name
-    assert data["error_code"] == result.error_code
-    assert data["message"] == result.message
-    assert data["raw_severity"] == result.raw_severity
-    assert data["snippet_context"] == result.snippet_context
-    assert data["snippet_start_line"] == result.snippet_start_line
-    assert data["semantic_context"] == result.semantic_context
+    for field in (
+        "line_start",
+        "line_end",
+        "col_start",
+        "col_end",
+        "linter_name",
+        "error_code",
+        "message",
+        "raw_severity",
+        "snippet_context",
+        "snippet_start_line",
+        "semantic_context",
+    ):
+        assert data[field] == getattr(result, field)
 
 
 @pytest.mark.parametrize(
@@ -196,7 +201,9 @@ def test_linter_result_to_dict(
         ),
     ],
 )
-def test_linter_result_from_dict(data: dict, expected: LinterResult) -> None:
+def test_linter_result_from_dict(
+    data: dict[str, object], expected: LinterResult
+) -> None:
     """Test reconstruction from dicts with and without optional fields."""
     assert LinterResult.from_dict(data) == expected
 
