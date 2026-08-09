@@ -7,22 +7,20 @@ Sanopy is distributed as a Python package and CLI tool for orchestrating multipl
 1. **Check version**: Update the `version` field in `pyproject.toml`.
 2. **Build the package**:
    ```bash
-   uv pip install --upgrade build
-   uv run python -m build
+   uv build
    ```
 3. **Check the build** (optional):
    ```bash
-   uv run twine check dist/*
+   uvx twine check dist/*
    ```
 4. **Publish**:
    ```bash
-   uv pip install --upgrade twine
-   uv run twine upload dist/*
+   uvx twine upload dist/*
    ```
 
 ## Notes
-- Ensure `README.md`, `LICENSE`, and `src/sanopy/py.typed` are included (see `MANIFEST.in`).
-- The CLI entry point is defined in `pyproject.toml` as `sanopy = "sanopy.cli:main"`.
+- The package is built with Hatchling; `README.md`, `LICENSE`, and `src/sanopy/py.typed` are included automatically.
+- The CLI entry point is defined in `pyproject.toml` as `sanopy = "sanopy.__main__:main"`.
 - Requires Python 3.12+.
 
 ## Post-publish smoke test

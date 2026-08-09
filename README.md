@@ -1,5 +1,17 @@
 # Sanopy
 
+<div align="center">
+
+[![CI](https://github.com/lpozo/sanopy/actions/workflows/pr-checks.yml/badge.svg)](https://github.com/lpozo/sanopy/actions/workflows/pr-checks.yml)
+[![PyPI - Version](https://img.shields.io/pypi/v/sanopy)](https://pypi.org/project/sanopy/)
+[![PyPI - Python Versions](https://img.shields.io/pypi/pyversions/sanopy)](https://pypi.org/project/sanopy/)
+[![Ruff](https://img.shields.io/badge/linting-ruff-D7FF64?logo=ruff&logoColor=white)](https://github.com/astral-sh/ruff)
+[![Mypy](https://img.shields.io/badge/typing-mypy-2a6db2)](https://github.com/python/mypy)
+[![Pyright](https://img.shields.io/badge/typing-pyright-2a6db2)](https://github.com/microsoft/pyright)
+[![License](https://img.shields.io/github/license/lpozo/sanopy)](https://github.com/lpozo/sanopy/blob/main/LICENSE)
+
+</div>
+
 Sanopy is a CLI tool for improving Python code quality. It runs multiple linters concurrently and emits findings as JSON to stdout.
 
 ## Requirements
@@ -62,11 +74,14 @@ Use human output mode for terminal-friendly progress and summaries:
 sanopy scan src/ --output-mode human
 ```
 
-You can now scan multiple directories or files at once:
+You can scan multiple directories or files at once:
 
 ```bash
 sanopy scan src/ tests/
 ```
+
+When scanning multiple targets, the results are merged into a single JSON
+document, and `run.target` becomes an array of the scanned paths.
 
 Generate a human-readable Markdown report:
 

@@ -25,13 +25,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - `Attributes:` sections in all dataclass docstrings.
 - Configuration discovery validates `[tool.<linter>]` sections in `pyproject.toml` to correctly detect local configs.
 - Ruff test glob set to `tests/**/*.py` for broader rule matching in test files.
+- Multi-target `scan` runs now emit a single valid JSON document, merging per-target results.
+- Comprehensive parametrized test suite covering linter output parsing for all supported linters.
 
 ### Changed
 
 - Configurable Safety CVE suppressions via the `[safety] ignore_cves` setting in `.sanopy.toml`, replacing the hardcoded suppression in the Safety linter.
+- Upgraded transitive dependencies (`cryptography`, `joserfc`, `nltk`) to clear Safety CVE findings.
+- Added CI, version, tooling, and license badges to the README.
 
 ### Fixed
 
 - Config status messages now use rich output on stderr, keeping machine JSON output on stdout clean.
+- Hardened linter result parsing against null or malformed JSON lists.
+- Pyright `reportUnsupportedDunderAll` warning for the dynamic `__all__` export in the linters package.
+- Removed the leftover `sanopy.toml` file left behind by the app rename.
 - Corrected the `-r`/`--human-readable` help text to match the actual report filename (`linting-report-<target>.md`).
 - Translated leftover non-English CLI docstrings and comments to English.
