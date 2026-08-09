@@ -1,14 +1,16 @@
 """Main entry point for the Sanopy CLI package."""
 
 import asyncio
+import json
 from pathlib import Path
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 import click
 from click.exceptions import Exit
 
 from sanopy.cli.init_handler import handle_init
 from sanopy.cli.scan_handler import handle_scan
+from sanopy.cli.ui import console
 
 
 @click.group()
@@ -86,7 +88,7 @@ def scan(  # vulture: ignore
         name = target.stem if target.is_file() else target.name
         return base.parent / f"{base.stem}-{name}{suffix}"
 
-    async def run_all_scans() -> list[int]:
+    async def run_all_scans() -> list[tuple[int, str | None]]:
         return await asyncio.gather(
             *[
                 handle_scan(
@@ -104,9 +106,46 @@ def scan(  # vulture: ignore
         )
 
     try:
-        finding_counts = asyncio.run(run_all_scans())
+        scan_outputs = asyncio.run(run_all_scans())
     except Exception as err:  # pylint: disable=broad-exception-caught
         raise Exit(2) from err
 
-    if sum(finding_counts) > 0:
+    _write_stdout_payloads([doc for _, doc in scan_outputs if doc is not None])
+
+    if sum(count for count, _ in scan_outputs) > 0:
         raise Exit(1)
+
+
+def _write_stdout_payloads(stdout_docs: list[str]) -> None:
+    """Write machine-mode JSON to stdout as a single valid document.
+
+    With a single target the original per-target envelope is emitted
+    unchanged. With several targets the envelopes are merged into one
+    document so the output remains valid JSON.
+    """
+    if not stdout_docs:
+        return
+
+    if len(stdout_docs) == 1:
+        console.file.write(stdout_docs[0] + "\n")
+        return
+
+    payloads = [json.loads(doc) for doc in stdout_docs]
+    console.file.write(json.dumps(_merge_payloads(payloads), indent=2) + "\n")
+
+
+def _merge_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
+    """Merge per-target scan payloads into a single JSON document."""
+    first_run = payloads[0]["run"]
+    return {
+        "schema_version": payloads[0]["schema_version"],
+        "run": {
+            "target": [p["run"]["target"] for p in payloads],
+            "generated_at": first_run["generated_at"],
+            "active_linters": first_run["active_linters"],
+            "finding_count": sum(p["run"]["finding_count"] for p in payloads),
+        },
+        "findings": [
+            finding for payload in payloads for finding in payload["findings"]
+        ],
+    }

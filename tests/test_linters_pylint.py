@@ -1,4 +1,4 @@
-"""Tests for Pylint linter using parametrization."""
+"""Tests for Pylint linter."""
 
 import json
 from pathlib import Path
@@ -46,9 +46,11 @@ def linter() -> PylintLinter:
         ),
         # Empty results
         ("[]", 0, None),
+        # Null results
+        ("null", 0, None),
         # Malformed JSON
         ("Crashed", 0, None),
-        # Missing optional fields
+        # Missing message-id falls back to the symbol
         (
             json.dumps(
                 [
@@ -60,10 +62,10 @@ def linter() -> PylintLinter:
                 ]
             ),
             1,
-            "W0611",  # Placeholder code
-            # PylintLinter.parse_output fallback:
-            # error_code = error.get("message-id", ... "Unknown")
+            "some-error",
         ),
+        # Missing all optional fields falls back to Unknown
+        (json.dumps([{"line": 3, "message": "Bare message"}]), 1, "Unknown"),
     ],
 )
 @pytest.mark.asyncio
@@ -78,11 +80,61 @@ async def test_pylint_scenarios(
 
     assert len(results) == expected_count
     if expected_count > 0:
-        # Note: fix expectation for the missing message-id case
-        if "message-id" not in stdout and "symbol" in stdout:
-            expected_code = "some-error"
-        else:
-            expected_code = first_error_code
-
-        assert results[0].error_code == expected_code
+        assert results[0].error_code == first_error_code
         assert results[0].snippet_context == "snippet"
+
+
+@pytest.mark.asyncio
+async def test_pylint_parses_fields(mocker, linter) -> None:
+    """Test full field mapping from a Pylint message."""
+    stdout = json.dumps(
+        [
+            {
+                "line": 8,
+                "column": 4,
+                "endLine": 12,
+                "endColumn": 9,
+                "path": "src/mod.py",
+                "symbol": "too-many-args",
+                "message": "Too many arguments",
+                "message-id": "R0913",
+            }
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(PylintLinter, "_run_command", return_value=mock_result)
+
+    results = await linter.run(Path("target.py"))
+
+    assert len(results) == 1
+    result = results[0]
+    assert result.file_path == Path("src/mod.py")
+    assert result.line_start == 8
+    assert result.line_end == 12
+    assert result.col_start == 4
+    assert result.col_end == 9
+    assert result.error_code == "R0913"
+    assert result.message == "Too many arguments"
+
+
+@pytest.mark.parametrize("config_present", [False, True])
+def test_pylint_build_command(mocker, tmp_path, config_present: bool) -> None:
+    """Test that the Pylint command includes the rcfile when available."""
+    target = tmp_path / "mod.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+
+    config_path = Path("/cfg/.pylintrc") if config_present else None
+    mock_config = mocker.patch.object(
+        PylintLinter, "_get_effective_config_path", return_value=config_path
+    )
+
+    cmd = PylintLinter().build_command(target)
+
+    expected = ["pylint", "--output-format=json"]
+    if config_present:
+        expected += ["--rcfile=/cfg/.pylintrc"]
+
+    assert cmd == expected + [str(target.absolute())]
+    mock_config.assert_called_once_with(
+        target, [".pylintrc", "pylintrc", "pyproject.toml"]
+    )

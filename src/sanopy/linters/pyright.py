@@ -41,7 +41,7 @@ class PyrightLinter(BaseLinter):
 
         try:
             data = json.loads(process_result.stdout)
-            diagnostics = data.get("generalDiagnostics", [])
+            diagnostics = data.get("generalDiagnostics") or []
         except json.JSONDecodeError:
             return []
 

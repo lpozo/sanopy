@@ -30,7 +30,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     output: Path | None,
     output_mode: Literal["machine", "human"] = "machine",
     human_readable: bool = False,
-) -> int:
+) -> tuple[int, str | None]:
     """Run all active linters on a target path and write results to JSON.
 
     Linters are executed in parallel. Progress is rendered in the terminal.
@@ -50,7 +50,9 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
             ``linting-report-<target>.md``.
 
     Returns:
-        Number of findings emitted for the target.
+        A tuple of the number of findings for the target and the serialized
+        JSON document for machine stdout output, or ``None`` when the output
+        is written to a file instead.
     """
     if output_mode == "human":
         console.print(f"[bold blue]Scanning {target}...[/bold blue]")
@@ -68,13 +70,13 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     results.sort(key=lambda r: (str(r.file_path), r.line_start))
 
     reporter = ScanReporter(results, target, output, active_linters)
-    _render_scan_output(
+    stdout_json = _render_scan_output(
         reporter=reporter,
         output_mode=output_mode,
         human_readable=human_readable,
     )
 
-    return len(results)
+    return len(results), stdout_json
 
 
 async def _run_linters(
@@ -109,8 +111,13 @@ def _render_scan_output(
     reporter: "ScanReporter",
     output_mode: Literal["machine", "human"],
     human_readable: bool,
-) -> None:
-    """Render scan output according to machine/human mode settings."""
+) -> str | None:
+    """Render scan output according to machine/human mode settings.
+
+    Returns:
+        The serialized JSON document when machine output goes to stdout,
+        otherwise ``None`` (output was written to a file or not emitted).
+    """
     if output_mode == "human" and not reporter.results:
         console.print("[bold green]No issues found! 🎉[/bold green]")
 
@@ -124,8 +131,8 @@ def _render_scan_output(
         reporter.write_human_readable_report(announce=announce)
     if announce:
         reporter.print_fix_hint()
-    else:
-        reporter.write_json_stdout()
+        return None
+    return reporter.serialize_stdout()
 
 
 def _parse_linter_names(names: str | None, default: list[str]) -> list[str]:
@@ -302,9 +309,9 @@ class ScanReporter:
                 f"\n[bold green]Results saved to {self.output}[/bold green]"
             )
 
-    def write_json_stdout(self) -> None:
-        """Write deterministic JSON output to stdout for automation."""
-        console.file.write(self._serialize_results() + "\n")
+    def serialize_stdout(self) -> str:
+        """Return the JSON document emitted for machine stdout output."""
+        return self._serialize_results()
 
     def get_human_readable_path(self) -> Path:
         """Return the markdown report path for the current scan target."""

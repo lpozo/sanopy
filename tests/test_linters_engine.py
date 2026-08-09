@@ -9,37 +9,132 @@ from sanopy.linters.result import LinterResult
 
 
 class MockLinter(BaseLinter):
-    """A mock linter that returns predefined results."""
+    """A mock linter that returns predefined results or raises."""
 
-    def __init__(self, name: str, return_list: list[LinterResult]) -> None:
+    def __init__(
+        self,
+        name: str,
+        return_list: list[LinterResult] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.name = name
-        self._returns = return_list
+        self._returns = return_list or []
+        self._error = error
 
     def build_command(self, target: Path) -> list[str]:
         return ["echo", str(target)]
 
     def parse_output(self, process_result, target: Path) -> list[LinterResult]:
+        if self._error:
+            raise self._error
         return self._returns
 
 
+def _results(name: str, count: int) -> list[LinterResult]:
+    """Build ``count`` LinterResults for a given linter name."""
+    return [
+        LinterResult(
+            Path(f"{name}{i}.py"),
+            i,
+            None,
+            None,
+            None,
+            name,
+            "E1",
+            f"Msg {i}",
+            "",
+        )
+        for i in range(count)
+    ]
+
+
+@pytest.mark.parametrize(
+    "linter_specs, expected_count",
+    [
+        # Multiple linters with varying result counts
+        ([("L1", 1), ("L2", 2)], 3),
+        # A linter that returns no results
+        ([("L1", 1), ("L2", 0)], 1),
+        # No linters configured
+        ([], 0),
+        # A single linter with many results
+        ([("A", 3)], 3),
+    ],
+)
 @pytest.mark.asyncio
-async def test_engine_run_all() -> None:
-    """Test that the engine combines results from multiple linters."""
-    res1 = LinterResult(
-        Path("x.py"), 1, None, None, None, "L1", "E1", "Msg1", ""
-    )
-    res2 = LinterResult(
-        Path("y.py"), 2, None, None, None, "L2", "E2", "Msg2", ""
-    )
+async def test_engine_combines_results(
+    linter_specs: list[tuple[str, int]], expected_count: int
+) -> None:
+    """Test that the engine merges results from multiple linters."""
+    linters: list[BaseLinter] = [
+        MockLinter(name, _results(name, count)) for name, count in linter_specs
+    ]
 
-    mock_linter1 = MockLinter("Linter1", [res1])
-    mock_linter2 = MockLinter("Linter2", [res1, res2])
+    results = await Engine(linters=linters).run_all(Path())
 
-    engine = Engine(linters=[mock_linter1, mock_linter2])
-    results = await engine.run_all(Path())
+    assert len(results) == expected_count
+    assert {r.linter_name for r in results} == {
+        name for name, count in linter_specs if count > 0
+    }
 
-    assert len(results) == 3
-    # Sort results to ensure deterministic assertions
-    results.sort(key=lambda r: (r.linter_name, str(r.file_path)))
-    assert results[0].linter_name == "L1"
-    assert results[2].linter_name == "L2"
+
+@pytest.mark.parametrize(
+    "counts, failing_index, expected_count",
+    [
+        # First linter fails
+        ([1, 2, 3], 0, 5),
+        # Middle linter fails
+        ([1, 2, 3], 1, 4),
+        # Last linter fails
+        ([1, 2, 3], 2, 3),
+        # Only linter fails
+        ([1], 0, 0),
+    ],
+)
+@pytest.mark.asyncio
+async def test_engine_isolates_failures(
+    counts: list[int], failing_index: int, expected_count: int
+) -> None:
+    """Test that a failing linter does not discard other linters' results."""
+    linters: list[BaseLinter] = []
+    for idx, count in enumerate(counts):
+        if idx == failing_index:
+            linters.append(MockLinter(f"L{idx}", error=RuntimeError("boom")))
+        else:
+            linters.append(MockLinter(f"L{idx}", _results(f"L{idx}", count)))
+
+    results = await Engine(linters=linters).run_all(Path())
+
+    assert len(results) == expected_count
+    assert all(r.linter_name != f"L{failing_index}" for r in results)
+
+
+@pytest.mark.parametrize(
+    "linter_count, failing_count",
+    [
+        (0, 0),
+        (1, 0),
+        (3, 0),
+        (3, 1),
+    ],
+)
+@pytest.mark.asyncio
+async def test_engine_progress_callback(
+    linter_count: int, failing_count: int
+) -> None:
+    """Test that the progress callback fires once per linter task."""
+    linters: list[BaseLinter] = []
+    for idx in range(linter_count):
+        if idx < failing_count:
+            linters.append(MockLinter(f"L{idx}", error=RuntimeError("boom")))
+        else:
+            linters.append(MockLinter(f"L{idx}", _results(f"L{idx}", 1)))
+
+    calls: list[int] = []
+
+    def callback() -> None:
+        calls.append(1)
+
+    await Engine(linters=linters).run_all(Path(), progress_callback=callback)
+
+    assert len(calls) == linter_count
