@@ -50,7 +50,7 @@ class RuffLinter(BaseLinter):
         # pylint: disable=too-many-locals
 
         try:
-            errors = json.loads(process_result.stdout)
+            errors = json.loads(process_result.stdout) or []
         except json.JSONDecodeError:
             return []
 

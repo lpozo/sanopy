@@ -1,4 +1,4 @@
-"""Tests for Radon linter using parametrization."""
+"""Tests for Radon linter."""
 
 import json
 from pathlib import Path
@@ -6,7 +6,7 @@ from pathlib import Path
 import pytest
 
 from sanopy.linters.base import AsyncCompletedProcess
-from sanopy.linters.radon import RadonLinter
+from sanopy.linters.radon import MIN_COMPLEXITY_RANK, RadonLinter
 
 
 @pytest.fixture(autouse=True)
@@ -105,6 +105,31 @@ def linter() -> RadonLinter:
         ("{}", 0, None, None),
         # Malformed JSON
         ("not json", 0, None, None),
+        # A file with null blocks
+        (
+            json.dumps({"a.py": None}),
+            0,
+            None,
+            None,
+        ),
+        # Missing rank falls back to A
+        (
+            json.dumps(
+                {
+                    "a.py": [
+                        {
+                            "type": "function",
+                            "name": "f1",
+                            "complexity": 5,
+                            "lineno": 1,
+                        }
+                    ]
+                }
+            ),
+            1,
+            "CC-A",
+            "f1",
+        ),
     ],
 )
 @pytest.mark.asyncio
@@ -127,3 +152,52 @@ async def test_radon_scenarios(
         assert results[0].error_code == first_error_code
         assert first_name_fragment in results[0].message
         assert results[0].snippet_context == "snippet"
+
+
+@pytest.mark.asyncio
+async def test_radon_parses_fields(mocker, linter) -> None:
+    """Test full field mapping from a Radon block."""
+    stdout = json.dumps(
+        {
+            "mod.py": [
+                {
+                    "type": "function",
+                    "name": "process",
+                    "classname": "Engine",
+                    "complexity": 21,
+                    "rank": "C",
+                    "lineno": 30,
+                    "endline": 55,
+                }
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(RadonLinter, "_run_command", return_value=mock_result)
+
+    results = await linter.run(Path("target.py"))
+
+    assert len(results) == 1
+    result = results[0]
+    assert result.file_path == Path("mod.py")
+    assert result.line_start == 30
+    assert result.line_end == 55
+    assert result.col_start is None
+    assert result.error_code == "CC-C"
+    assert "Function 'Engine.process'" in result.message
+    assert "complexity 21" in result.message
+
+
+def test_radon_build_command(tmp_path) -> None:
+    """Test the Radon command construction."""
+    target = tmp_path / "mod.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+
+    assert RadonLinter().build_command(target) == [
+        "radon",
+        "cc",
+        "-j",
+        "-n",
+        MIN_COMPLEXITY_RANK,
+        str(target.absolute()),
+    ]

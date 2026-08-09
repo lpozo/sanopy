@@ -56,7 +56,7 @@ class RadonLinter(BaseLinter):
         for file_path_str, blocks in data.items():
             file_path = Path(file_path_str)
 
-            for block in blocks:
+            for block in blocks or []:
                 block_type = block.get("type", "function")
                 block_name = block.get("name", "unknown")
                 classname = block.get("classname", "")

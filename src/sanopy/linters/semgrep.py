@@ -48,7 +48,7 @@ class SemgrepLinter(BaseLinter):
 
         try:
             data = json.loads(process_result.stdout)
-            findings = data.get("results", [])
+            findings = data.get("results") or []
         except json.JSONDecodeError:
             return []
 

@@ -11,28 +11,53 @@ from sanopy.linters.context import (
     get_linter_context,
 )
 
-
-def test_snippet_provider_extract(tmp_path) -> None:
-    """Test extracting a raw snippet from a file."""
-    test_file = tmp_path / "test.py"
-    test_file.write_text(
-        "def foo():\n    pass\n\ndef bar():\n    return 1\n", encoding="utf-8"
-    )
-
-    # Test raw extraction
-    snippet = SnippetProvider.extract(test_file, line_start=2, context_lines=1)
-    expected = "def foo():\n    pass\n"
-    assert snippet == expected
+CLASS_FUNC_CONTENT = "class MyClass:\n    def my_func(self):\n        pass\n"
 
 
-def test_snippet_provider_extract_with_line_end(tmp_path) -> None:
-    """Test extraction with an explicit line end."""
-    test_file = tmp_path / "test.py"
-    test_file.write_text("1\n2\n3\n4\n5\n", encoding="utf-8")
+def _write(tmp_path: Path, name: str, content: str) -> Path:
+    """Write a file into tmp_path and return its path."""
+    path = tmp_path / name
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+@pytest.mark.parametrize(
+    "content, line_start, line_end, context_lines, expected",
+    [
+        # Basic extraction with surrounding context
+        (
+            "def foo():\n    pass\n\ndef bar():\n    return 1\n",
+            2,
+            None,
+            1,
+            "def foo():\n    pass\n",
+        ),
+        # Explicit line end with no surrounding context
+        ("1\n2\n3\n4\n5\n", 2, 4, 0, "2\n3\n4"),
+        # Line start beyond file length
+        ("line1\nline2\nline3", 10, None, 5, ""),
+        # Context wider than the file is clamped
+        ("line1\nline2\nline3", 1, None, 10, "line1\nline2\nline3"),
+        # Zero context lines without an explicit end
+        ("1\n2\n3", 2, None, 0, "2"),
+    ],
+)
+def test_snippet_provider_extract(
+    tmp_path,
+    content: str,
+    line_start: int,
+    line_end: int | None,
+    context_lines: int,
+    expected: str,
+) -> None:
+    """Test extracting raw snippets from files."""
+    test_file = _write(tmp_path, "test.py", content)
+
     snippet = SnippetProvider.extract(
-        test_file, line_start=2, line_end=4, context_lines=0
+        test_file, line_start, line_end, context_lines
     )
-    assert snippet == "2\n3\n4"
+
+    assert snippet == expected
 
 
 @pytest.mark.parametrize(
@@ -41,193 +66,282 @@ def test_snippet_provider_extract_with_line_end(tmp_path) -> None:
         ("line1\nline2", 10, "  10 | line1\n  11 | line2"),
         ("", 1, ""),
         ("single", 5, "   5 | single"),
+        ("a\nb\nc", 0, "   0 | a\n   1 | b\n   2 | c"),
     ],
 )
 def test_snippet_provider_format(
     snippet: str, start_line: int, expected: str
 ) -> None:
-    """Test formatting a snippet with line numbers."""
-    assert SnippetProvider.format(snippet, start_line=start_line) == expected
+    """Test formatting snippets with line numbers."""
+    assert SnippetProvider.format(snippet, start_line) == expected
 
 
-def test_source_analyzer_find_context_bounds(tmp_path) -> None:
-    """Test finding the semantic context."""
-    test_file = tmp_path / "test.py"
-    test_file.write_text(
-        "class MyClass:\n    def my_func(self):\n        pass\n",
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize(
+    "content, line_start, expected_fragment",
+    [
+        # Inside a method
+        (CLASS_FUNC_CONTENT, 3, "in def my_func"),
+        # At class level
+        (CLASS_FUNC_CONTENT, 1, "in class MyClass"),
+        # Method header line resolves to the method
+        (CLASS_FUNC_CONTENT, 2, "in def my_func"),
+        # Module scope
+        ("x = 1\ny = 2\n", 2, "in module scope"),
+        # Async function
+        ("async def my_async():\n    pass\n", 2, "in def my_async"),
+        # Innermost nested function wins
+        ("def outer():\n    def inner():\n        pass\n", 3, "in def inner"),
+        # Method inside a class
+        ("class A:\n    def m(self):\n        pass\n", 2, "in def m"),
+    ],
+)
+def test_find_context_bounds(
+    tmp_path, content: str, line_start: int, expected_fragment: str
+) -> None:
+    """Test semantic context detection for a line."""
+    test_file = _write(tmp_path, "context.py", content)
 
-    # Inside function
-    _, info = SourceAnalyzer.find_context_bounds(test_file, line_start=3)
-    assert "def my_func" in info
+    _, info = SourceAnalyzer.find_context_bounds(test_file, line_start)
 
-    # At class level
-    _, info = SourceAnalyzer.find_context_bounds(test_file, line_start=1)
-    assert "class MyClass" in info
-
-    # Module scope
-    test_file_2 = tmp_path / "module.py"
-    test_file_2.write_text("x = 1\ny = 2\n", encoding="utf-8")
-    _, info = SourceAnalyzer.find_context_bounds(test_file_2, line_start=2)
-    assert "module scope" in info
+    assert expected_fragment in info
 
 
-def test_source_analyzer_fallback_search(tmp_path) -> None:
-    """Test fallback search when AST parsing fails."""
-    test_file = tmp_path / "bad.py"
-    # Invalid syntax
-    test_file.write_text("def unmatched_paren(\n    pass\n", encoding="utf-8")
+@pytest.mark.parametrize(
+    "content, line_start, expected_fragment",
+    [
+        # Fallback string search for invalid syntax
+        ("def unmatched_paren(\n    pass\n", 2, "in def unmatched_paren"),
+        # No class/def found falls back to module scope
+        ("print('hello')\nprint('world')", 2, "in module scope"),
+        # Line index beyond the file falls back to module scope
+        ("line1", 10, "in module scope"),
+    ],
+)
+def test_find_context_bounds_fallback(
+    tmp_path, content: str, line_start: int, expected_fragment: str
+) -> None:
+    """Test context detection when AST parsing fails or cannot locate."""
+    test_file = _write(tmp_path, "fallback.py", content)
 
-    idx, info = SourceAnalyzer.find_context_bounds(test_file, line_start=2)
+    idx, info = SourceAnalyzer.find_context_bounds(test_file, line_start)
+
     assert idx == 0
-    assert "in def unmatched_paren" in info
+    assert expected_fragment in info
 
 
-def test_source_analyzer_extract_symbols(tmp_path) -> None:
-    """Test symbol extraction."""
-    test_file = tmp_path / "syms.py"
-    test_file.write_text(
-        "class PublicClass:\n    pass\n\ndef public_func():\n    pass\n\n"
-        "def _private():\n    pass\n",
-        encoding="utf-8",
-    )
+@pytest.mark.parametrize(
+    "content, expected_names, expected_kinds",
+    [
+        # Public symbols only; private ones are skipped
+        (
+            "class PublicClass:\n    pass\n\ndef public_func():\n    pass\n\n"
+            "def _private():\n    pass\n",
+            ["PublicClass", "public_func"],
+            ["class", "function"],
+        ),
+        # Async functions are discovered
+        ("async def my_async():\n    pass\n", ["my_async"], ["function"]),
+        # Methods are not top-level symbols
+        ("class A:\n    def m(self):\n        pass\n", ["A"], ["class"]),
+        # Empty and non-symbol files yield no symbols
+        ("", [], []),
+        ("import os\n", [], []),
+        # Invalid syntax yields no symbols
+        ("def broken(:\n", [], []),
+    ],
+)
+def test_extract_symbols(
+    tmp_path, content: str, expected_names: list, expected_kinds: list
+) -> None:
+    """Test extraction of top-level public symbols."""
+    test_file = _write(tmp_path, "syms.py", content)
 
     symbols = SourceAnalyzer.extract_symbols(test_file)
-    names = [s.name for s in symbols]
-    assert "PublicClass" in names
-    assert "public_func" in names
-    assert "_private" not in names
-    assert all(s.kind in ("class", "function") for s in symbols)
+
+    assert [s.name for s in symbols] == expected_names
+    assert [s.kind for s in symbols] == expected_kinds
 
 
-def test_project_scanner_scan_project(tmp_path) -> None:
+def test_extract_symbols_capped_at_ten(tmp_path) -> None:
+    """Test that symbol extraction is limited to ten symbols."""
+    lines = "\n".join(f"def f{i}():\n    pass" for i in range(12))
+    test_file = _write(tmp_path, "many.py", lines)
+
+    symbols = SourceAnalyzer.extract_symbols(test_file)
+
+    assert len(symbols) == 10
+
+
+def test_extract_symbols_relative_path(tmp_path) -> None:
+    """Test that a root path produces relative symbol file paths."""
+    test_file = _write(tmp_path, "app.py", "def main(): pass\n")
+
+    symbols = SourceAnalyzer.extract_symbols(test_file, root_path=tmp_path)
+
+    assert symbols[0].file_path == Path("app.py")
+
+
+def test_extract_symbols_binary_file(tmp_path) -> None:
+    """Test symbol extraction from a non-UTF-8 file yields no symbols."""
+    test_file = tmp_path / "binary.py"
+    test_file.write_bytes(b"\xff\xfe\xfd")
+
+    assert SourceAnalyzer.extract_symbols(test_file) == []
+
+
+@pytest.mark.parametrize(
+    "files, expected_tree, expected_symbols, expected_config_keys",
+    [
+        (
+            {
+                "app.py": "def main(): pass\n",
+                "utils.py": "def helper(): pass\n",
+                "pyproject.toml": '[tool.ruff]\nignore = ["E501"]\n',
+            },
+            ["app.py", "utils.py"],
+            ["main", "helper"],
+            ["ruff"],
+        ),
+        (
+            {"app.py": "x = 1\n"},
+            ["app.py"],
+            [],
+            [],
+        ),
+    ],
+)
+def test_project_scanner_scan_directory(
+    tmp_path,
+    files: dict,
+    expected_tree: list,
+    expected_symbols: list,
+    expected_config_keys: list,
+) -> None:
     """Test scanning a project directory."""
     project = tmp_path / "my_project"
     project.mkdir()
-    (project / "app.py").write_text("def main(): pass", encoding="utf-8")
-    (project / "utils.py").write_text("def helper(): pass", encoding="utf-8")
-    (project / "pyproject.toml").write_text(
-        '[tool.ruff]\nignore = ["E501"]\n', encoding="utf-8"
-    )
+    for name, content in files.items():
+        (project / name).write_text(content, encoding="utf-8")
 
     summary = ProjectScanner.scan_project(project)
-    assert "app.py" in summary.file_tree
-    assert "utils.py" in summary.file_tree
-    assert "ruff" in summary.target_config
-    assert summary.target_config["ruff"]["ignore"] == ["E501"]
 
-    # Verify symbol collection
-    symbol_names = [s.name for s in summary.public_symbols]
-    assert "main" in symbol_names
-    assert "helper" in symbol_names
-
-
-def test_project_scanner_parse_config(tmp_path) -> None:
-    """Test parsing linter configs from pyproject.toml."""
-    (tmp_path / "pyproject.toml").write_text(
-        '[tool.pylint]\nmax-line-length = 88\n[tool.other]\nkey = "val"',
-        encoding="utf-8",
-    )
-    config = ProjectScanner.parse_config(tmp_path)
-    assert "pylint" in config
-    assert config["pylint"]["max-line-length"] == 88
-    assert "other" not in config
-
-
-def test_get_linter_context(tmp_path) -> None:
-    """Test the unified context helper wrapper."""
-    test_file = tmp_path / "test.py"
-    test_file.write_text("line 1\nline 2\nline 3\n", encoding="utf-8")
-
-    raw, start, info = get_linter_context(
-        test_file, line_start=2, context_lines=1
-    )
-    assert raw == "line 1\nline 2\nline 3"
-    assert start == 1
-    assert "module scope" in info
-
-
-def test_context_missing_file() -> None:
-    """Test handling of missing files."""
-    path = Path("non_existent.py")
-    assert SnippetProvider.extract(path, 1) == ""
-    idx, info = SourceAnalyzer.find_context_bounds(path, 1)
-    assert idx == 0
-    assert "unknown context" in info
-
-
-def test_async_symbols(tmp_path) -> None:
-    """Test extraction of async functions."""
-    test_file = tmp_path / "async_test.py"
-    test_file.write_text("async def my_async():\n    pass\n", encoding="utf-8")
-
-    symbols = SourceAnalyzer.extract_symbols(test_file)
-    assert len(symbols) == 1
-    assert symbols[0].name == "my_async"
-    assert symbols[0].kind == "function"
-
-    _, info = SourceAnalyzer.find_context_bounds(test_file, line_start=2)
-    assert "def my_async" in info
+    assert summary.file_tree == expected_tree
+    assert [s.name for s in summary.public_symbols] == expected_symbols
+    for key in expected_config_keys:
+        assert key in summary.target_config
 
 
 def test_project_scanner_scan_single_file(tmp_path) -> None:
     """Test scanning a single file instead of a directory."""
-    test_file = tmp_path / "app.py"
-    test_file.write_text("def main(): pass", encoding="utf-8")
+    test_file = _write(tmp_path, "app.py", "def main(): pass\n")
+
     summary = ProjectScanner.scan_project(test_file)
+
     assert summary.file_tree == ["app.py"]
-    assert len(summary.public_symbols) == 1
-    assert summary.public_symbols[0].name == "main"
+    assert [s.name for s in summary.public_symbols] == ["main"]
 
 
-def test_fallback_search_no_match(tmp_path) -> None:
-    """Test fallback search via public API when no class/def is found."""
-    test_file = tmp_path / "no_context.py"
-    test_file.write_text("print('hello')\nprint('world')", encoding="utf-8")
+def test_project_scanner_scan_empty_directory(tmp_path) -> None:
+    """Test scanning an empty directory."""
+    summary = ProjectScanner.scan_project(tmp_path)
 
-    # This triggers fallback via find_context_bounds
-    idx, info = SourceAnalyzer.find_context_bounds(test_file, line_start=2)
-    assert idx == 0
+    assert summary.file_tree == []
+    assert summary.public_symbols == []
+    assert summary.target_config == {}
+
+
+@pytest.mark.parametrize(
+    "toml_content, expected_keys, unexpected_keys",
+    [
+        (
+            '[tool.pylint]\nmax-line-length = 88\n[tool.other]\nkey = "val"',
+            ["pylint"],
+            ["other"],
+        ),
+        (
+            "[tool.ruff]\nignore = ['E501']\n"
+            "[tool.mypy]\nstrict = true\n"
+            "[tool.vulture]\nignore_names = []\n"
+            "[tool.bandit]\nx = 1\n",
+            ["ruff", "mypy", "vulture"],
+            ["bandit"],
+        ),
+        # Invalid TOML is ignored
+        ("not: valid: toml [[[", [], []),
+        # Empty file
+        ("", [], []),
+    ],
+)
+def test_project_scanner_parse_config(
+    tmp_path, toml_content: str, expected_keys: list, unexpected_keys: list
+) -> None:
+    """Test parsing linter sections from pyproject.toml."""
+    (tmp_path / "pyproject.toml").write_text(toml_content, encoding="utf-8")
+
+    config = ProjectScanner.parse_config(tmp_path)
+
+    for key in expected_keys:
+        assert key in config
+    for key in unexpected_keys:
+        assert key not in config
+
+
+def test_project_scanner_parse_config_missing_file(tmp_path) -> None:
+    """Test parsing config when pyproject.toml does not exist."""
+    assert ProjectScanner.parse_config(tmp_path) == {}
+
+
+@pytest.mark.parametrize(
+    "content, line_start, context_lines, expected_start",
+    [
+        ("line 1\nline 2\nline 3\n", 2, 1, 1),
+        ("x = 1\ny = 2\nz = 3\n", 2, 5, 1),
+    ],
+)
+def test_get_linter_context(
+    tmp_path,
+    content: str,
+    line_start: int,
+    context_lines: int,
+    expected_start: int,
+) -> None:
+    """Test the unified context helper wrapper."""
+    test_file = _write(tmp_path, "test.py", content)
+
+    raw, start, info = get_linter_context(
+        test_file, line_start, context_lines=context_lines
+    )
+
+    assert raw
+    assert start == expected_start
     assert "module scope" in info
 
 
-def test_snippet_provider_extract_bounds(tmp_path) -> None:
-    """Test snippet extraction with out-of-bounds line numbers."""
-    test_file = tmp_path / "bounds.py"
-    test_file.write_text("line1\nline2\nline3", encoding="utf-8")
+@pytest.mark.parametrize(
+    "file_path",
+    [Path("non_existent.py"), Path("missing/dir/other.py")],
+)
+def test_missing_file(file_path: Path) -> None:
+    """Test that missing files degrade gracefully."""
+    assert SnippetProvider.extract(file_path, 1) == ""
 
-    # Start beyond file length
-    snippet = SnippetProvider.extract(test_file, line_start=10)
-    assert snippet == ""
+    idx, info = SourceAnalyzer.find_context_bounds(file_path, 1)
+    assert idx == 0
+    assert "unknown context" in info
 
-    # End bound
-    snippet = SnippetProvider.extract(
-        test_file, line_start=1, context_lines=10
-    )
-    assert snippet == "line1\nline2\nline3"
+    raw, start, info = get_linter_context(file_path, 1)
+    assert raw == ""
+    assert start == 1
+    assert "unknown context" in info
 
 
-def test_extract_unicode_error(tmp_path) -> None:
-    """Test handling of Unicode decode errors."""
+def test_unicode_decode_error(tmp_path) -> None:
+    """Test handling of non-UTF-8 files."""
     test_file = tmp_path / "binary.py"
-    # Write some non-UTF-8 bytes
     test_file.write_bytes(b"\xff\xfe\xfd")
 
-    snippet = SnippetProvider.extract(test_file, 1)
-    assert snippet == ""
+    assert SnippetProvider.extract(test_file, 1) == ""
 
     idx, info = SourceAnalyzer.find_context_bounds(test_file, 1)
     assert idx == 0
     assert "unknown context" in info
-
-
-def test_fallback_search_index_error(tmp_path) -> None:
-    """Test fallback search via public API with line index out of range."""
-    test_file = tmp_path / "short.py"
-    test_file.write_text("line1", encoding="utf-8")
-
-    # line_start=10 on a 1-line file triggers fallback in find_context_bounds
-    idx, info = SourceAnalyzer.find_context_bounds(test_file, line_start=10)
-    assert idx == 0
-    assert "module scope" in info

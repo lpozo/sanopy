@@ -60,7 +60,7 @@ class SafetyLinter(BaseLinter):
             raw_stdout = process_result.stdout
             json_str = _extract_json(raw_stdout)
             data = json.loads(json_str)
-            vulnerabilities = data.get("vulnerabilities", [])
+            vulnerabilities = data.get("vulnerabilities") or []
         except (json.JSONDecodeError, ValueError):
             return []
 

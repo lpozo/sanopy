@@ -53,7 +53,7 @@ class BanditLinter(BaseLinter):
 
         try:
             output = json.loads(process_result.stdout)
-            errors = output.get("results", [])
+            errors = output.get("results") or []
         except json.JSONDecodeError:
             return []
 

@@ -6,144 +6,237 @@ import pytest
 
 from sanopy.linters.result import LinterResult
 
+MANDATORY_FIELDS = [
+    "file_path",
+    "line_start",
+    "linter_name",
+    "error_code",
+    "message",
+]
 
-def test_linter_result_creation() -> None:
-    """Test standard creation of LinterResult."""
-    result = LinterResult(
-        file_path=Path("src/main.py"),
-        line_start=10,
-        line_end=12,
-        col_start=5,
-        col_end=10,
-        linter_name="pylint",
-        error_code="C0111",
-        message="Missing module docstring",
-        snippet_context="def foo():\n    pass",
-    )
+FULL_RESULT = LinterResult(
+    file_path=Path("src/main.py"),
+    line_start=10,
+    line_end=12,
+    col_start=5,
+    col_end=10,
+    linter_name="pylint",
+    error_code="C0111",
+    message="Missing module docstring",
+    raw_severity="warning",
+    snippet_context="def foo():\n    pass",
+    snippet_start_line=1,
+    semantic_context="in def foo",
+)
 
-    assert result.file_path == Path("src/main.py")
-    assert result.line_start == 10
-    assert result.line_end == 12
-    assert result.col_start == 5
-    assert result.col_end == 10
-    assert result.linter_name == "pylint"
-    assert result.error_code == "C0111"
-    assert result.message == "Missing module docstring"
-    assert result.snippet_context == "def foo():\n    pass"
-
-
-def test_linter_result_optional_fields_defaults() -> None:
-    """Test LinterResult with mandatory fields and default snippet context."""
-    result = LinterResult(
-        file_path=Path("test.py"),
-        line_start=1,
-        line_end=None,
-        col_start=None,
-        col_end=None,
-        linter_name="ruff",
-        error_code="E501",
-        message="Line too long",
-    )
-
-    assert result.line_end is None
-    assert result.col_start is None
-    assert result.col_end is None
-    assert result.snippet_context == ""
+MINIMAL_RESULT = LinterResult(
+    file_path=Path("test.py"),
+    line_start=1,
+    line_end=None,
+    col_start=None,
+    col_end=None,
+    linter_name="ruff",
+    error_code="E501",
+    message="Line too long",
+)
 
 
-def test_linter_result_to_dict() -> None:
-    """Test serialization to dict, ensuring Path is converted to string."""
-    result = LinterResult(
-        file_path=Path("folder/file.py"),
-        line_start=1,
-        line_end=None,
-        col_start=None,
-        col_end=None,
-        linter_name="mypy",
-        error_code="attr-defined",
-        message="Item has no attribute",
-        snippet_context="print(obj.attr)",
-    )
+@pytest.mark.parametrize(
+    "result, expected",
+    [
+        (
+            FULL_RESULT,
+            {
+                "file_path": Path("src/main.py"),
+                "line_start": 10,
+                "line_end": 12,
+                "col_start": 5,
+                "col_end": 10,
+                "linter_name": "pylint",
+                "error_code": "C0111",
+                "message": "Missing module docstring",
+                "raw_severity": "warning",
+                "snippet_context": "def foo():\n    pass",
+                "snippet_start_line": 1,
+                "semantic_context": "in def foo",
+            },
+        ),
+        (
+            MINIMAL_RESULT,
+            {
+                "file_path": Path("test.py"),
+                "line_start": 1,
+                "line_end": None,
+                "col_start": None,
+                "col_end": None,
+                "linter_name": "ruff",
+                "error_code": "E501",
+                "message": "Line too long",
+                "raw_severity": None,
+                "snippet_context": "",
+                "snippet_start_line": 1,
+                "semantic_context": "",
+            },
+        ),
+    ],
+)
+def test_linter_result_fields(result: LinterResult, expected: dict) -> None:
+    """Test that all fields are exposed with the correct values/defaults."""
+    for field_name, expected_value in expected.items():
+        assert getattr(result, field_name) == expected_value
 
+
+@pytest.mark.parametrize(
+    "result, expected_path",
+    [
+        (FULL_RESULT, "src/main.py"),
+        (MINIMAL_RESULT, "test.py"),
+        (
+            LinterResult(Path("x.py"), 1, None, None, None, "l", "c", "m"),
+            "x.py",
+        ),
+    ],
+)
+def test_linter_result_to_dict(
+    result: LinterResult, expected_path: str
+) -> None:
+    """Test serialization to dict, converting Path to string."""
     data = result.to_dict()
 
-    assert data["file_path"] == "folder/file.py"
+    assert data["file_path"] == expected_path
     assert isinstance(data["file_path"], str)
-    assert data["linter_name"] == "mypy"
-    assert data["line_start"] == 1
-    assert data["line_end"] is None
-    assert data["snippet_context"] == "print(obj.attr)"
+    assert data["line_start"] == result.line_start
+    assert data["line_end"] == result.line_end
+    assert data["col_start"] == result.col_start
+    assert data["col_end"] == result.col_end
+    assert data["linter_name"] == result.linter_name
+    assert data["error_code"] == result.error_code
+    assert data["message"] == result.message
+    assert data["raw_severity"] == result.raw_severity
+    assert data["snippet_context"] == result.snippet_context
+    assert data["snippet_start_line"] == result.snippet_start_line
+    assert data["semantic_context"] == result.semantic_context
 
 
-def test_linter_result_from_dict_full() -> None:
-    """Test reconstruction from a complete dictionary."""
+@pytest.mark.parametrize(
+    "data, expected",
+    [
+        (
+            {
+                "file_path": "path/to/code.py",
+                "line_start": 42,
+                "line_end": 45,
+                "col_start": 1,
+                "col_end": 80,
+                "linter_name": "flake8",
+                "error_code": "F401",
+                "message": "Imported but unused",
+                "snippet_context": "import os",
+            },
+            LinterResult(
+                file_path=Path("path/to/code.py"),
+                line_start=42,
+                line_end=45,
+                col_start=1,
+                col_end=80,
+                linter_name="flake8",
+                error_code="F401",
+                message="Imported but unused",
+                snippet_context="import os",
+            ),
+        ),
+        (
+            {
+                "file_path": "simple.py",
+                "line_start": 1,
+                "linter_name": "bandit",
+                "error_code": "B101",
+                "message": "Assert used",
+            },
+            LinterResult(
+                file_path=Path("simple.py"),
+                line_start=1,
+                line_end=None,
+                col_start=None,
+                col_end=None,
+                linter_name="bandit",
+                error_code="B101",
+                message="Assert used",
+            ),
+        ),
+        (
+            {
+                "file_path": "full.py",
+                "line_start": 2,
+                "line_end": 4,
+                "col_start": 3,
+                "col_end": 9,
+                "linter_name": "pylint",
+                "error_code": "C0103",
+                "message": "Bad name",
+                "raw_severity": "info",
+                "snippet_context": "x = 1",
+                "snippet_start_line": 1,
+                "semantic_context": "in module scope",
+            },
+            LinterResult(
+                file_path=Path("full.py"),
+                line_start=2,
+                line_end=4,
+                col_start=3,
+                col_end=9,
+                linter_name="pylint",
+                error_code="C0103",
+                message="Bad name",
+                raw_severity="info",
+                snippet_context="x = 1",
+                snippet_start_line=1,
+                semantic_context="in module scope",
+            ),
+        ),
+    ],
+)
+def test_linter_result_from_dict(data: dict, expected: LinterResult) -> None:
+    """Test reconstruction from dicts with and without optional fields."""
+    assert LinterResult.from_dict(data) == expected
+
+
+@pytest.mark.parametrize(
+    "result",
+    [
+        FULL_RESULT,
+        MINIMAL_RESULT,
+        LinterResult(
+            file_path=Path("round/trip.py"),
+            line_start=5,
+            line_end=None,
+            col_start=10,
+            col_end=15,
+            linter_name="pyright",
+            error_code="reportGeneralTypeIssues",
+            message="Type mismatch",
+            snippet_context="x: int = 'a'",
+        ),
+    ],
+)
+def test_linter_result_roundtrip(result: LinterResult) -> None:
+    """Test that to_dict and from_dict are inverse operations."""
+    assert LinterResult.from_dict(result.to_dict()) == result
+
+
+@pytest.mark.parametrize("missing_field", MANDATORY_FIELDS)
+def test_linter_result_from_dict_missing_mandatory_field(
+    missing_field: str,
+) -> None:
+    """Test that omitting any mandatory field raises KeyError."""
     data = {
-        "file_path": "path/to/code.py",
-        "line_start": 42,
-        "line_end": 45,
-        "col_start": 1,
-        "col_end": 80,
-        "linter_name": "flake8",
-        "error_code": "F401",
-        "message": "Imported but unused",
-        "snippet_context": "import os",
-    }
-
-    result = LinterResult.from_dict(data)
-
-    assert result.file_path == Path("path/to/code.py")
-    assert result.line_start == 42
-    assert result.line_end == 45
-    assert result.col_start == 1
-    assert result.col_end == 80
-    assert result.linter_name == "flake8"
-    assert result.error_code == "F401"
-    assert result.message == "Imported but unused"
-    assert result.snippet_context == "import os"
-
-
-def test_linter_result_from_dict_minimal() -> None:
-    """Test reconstruction from minimal dict with missing optional keys."""
-    data = {
-        "file_path": "simple.py",
+        "file_path": "test.py",
         "line_start": 1,
         "linter_name": "bandit",
         "error_code": "B101",
         "message": "Assert used",
     }
-
-    result = LinterResult.from_dict(data)
-
-    assert result.file_path == Path("simple.py")
-    assert result.line_end is None
-    assert result.col_start is None
-    assert result.snippet_context == ""
-
-
-def test_linter_result_roundtrip() -> None:
-    """Test that to_dict and from_dict are inverse operations."""
-    original = LinterResult(
-        file_path=Path("round/trip.py"),
-        line_start=5,
-        line_end=None,
-        col_start=10,
-        col_end=15,
-        linter_name="pyright",
-        error_code="reportGeneralTypeIssues",
-        message="Type mismatch",
-        snippet_context="x: int = 'a'",
-    )
-
-    reconstructed = LinterResult.from_dict(original.to_dict())
-
-    assert original == reconstructed
-
-
-def test_linter_result_from_dict_invalid_data() -> None:
-    """Test that missing mandatory fields in from_dict raises KeyError."""
-    incomplete_data = {
-        "file_path": "test.py"
-    }  # Missing line_start, linter_name, etc.
+    del data[missing_field]
 
     with pytest.raises(KeyError):
-        LinterResult.from_dict(incomplete_data)
+        LinterResult.from_dict(data)

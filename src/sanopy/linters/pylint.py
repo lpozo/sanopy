@@ -51,7 +51,7 @@ class PylintLinter(BaseLinter):
         """
 
         try:
-            errors = json.loads(process_result.stdout)
+            errors = json.loads(process_result.stdout) or []
         except json.JSONDecodeError:
             return []
 
