@@ -26,7 +26,11 @@ def _discover_linters() -> dict[str, type[BaseLinter]]:
             continue
 
         try:
-            module = importlib.import_module(f"sanopy.linters.{module_name}")
+            # module_name comes from pkgutil.iter_modules() over this
+            # package's own directory, so it is never user-controlled.
+            module = importlib.import_module(  # nosemgrep
+                f"sanopy.linters.{module_name}"
+            )
             for attr_name in dir(module):
                 attr = getattr(module, attr_name)
                 if (
