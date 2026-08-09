@@ -1,6 +1,7 @@
 """Logic for discovering linter configurations (local and bundled defaults)."""
 
-import importlib.resources
+# Python 3.7 compatibility rule is irrelevant: sanopy requires >=3.12.
+from importlib import resources  # nosemgrep: python37-compatibility-importlib2
 from pathlib import Path
 
 
@@ -47,9 +48,7 @@ def get_bundled_config_path(linter_name: str, category: str) -> Path | None:
         resource_pkg = f"sanopy.linters.configs.{category}"
         # When installed as a regular package, we can get the path directly.
         # importlib.resources.files() is the modern way.
-        resource_path = importlib.resources.files(resource_pkg).joinpath(
-            filename
-        )
+        resource_path = resources.files(resource_pkg).joinpath(filename)
         # We need an actual file path.
         # If it's a real file (not in zip), .resolve() gives
         # us the absolute path.

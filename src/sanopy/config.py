@@ -12,6 +12,19 @@ DEFAULT_CONFIG_PATH = Path(".sanopy.toml")
 _console = Console(stderr=True)
 
 
+def _dedupe_strings(values: list[str], *, upper: bool = False) -> list[str]:
+    """Strip, case-normalize, and deduplicate a list of strings."""
+    cleaned: list[str] = []
+    for value in values:
+        value = value.strip()
+        if not value:
+            continue
+        value = value.upper() if upper else value.lower()
+        if value not in cleaned:
+            cleaned.append(value)
+    return cleaned
+
+
 @dataclass
 class Config:
     """Configuration data for linter selection defaults.
@@ -21,11 +34,14 @@ class Config:
         skip_linters: Linter names to skip by default.
         ignored_cves: Safety CVE IDs to suppress. ``None`` keeps the
             linter's built-in defaults.
+        ignore_vulns: pip-audit vulnerability IDs or aliases to suppress.
+            ``None`` keeps the linter's built-in defaults.
     """
 
     only_linters: list[str] = field(default_factory=list)
     skip_linters: list[str] = field(default_factory=list)
     ignored_cves: list[str] | None = None
+    ignore_vulns: list[str] | None = None
 
     @classmethod
     def load(cls, path: Path | None = None) -> Self:
@@ -66,6 +82,10 @@ class Config:
                 if "ignore_cves" in safety_data:
                     filtered["ignored_cves"] = safety_data["ignore_cves"]
 
+                pip_audit_data = data.get("pip-audit", {})
+                if "ignore_vulns" in pip_audit_data:
+                    filtered["ignore_vulns"] = pip_audit_data["ignore_vulns"]
+
                 config = cls(**filtered)
                 config._normalize()
                 return config
@@ -80,23 +100,13 @@ class Config:
             return config
 
     def _normalize(self) -> None:
-        """Normalise all fields to canonical lower-case, stripped values."""
-        self.only_linters = list(
-            dict.fromkeys(
-                v.strip().lower() for v in self.only_linters if v.strip()
-            )
-        )
-        self.skip_linters = list(
-            dict.fromkeys(
-                v.strip().lower() for v in self.skip_linters if v.strip()
-            )
-        )
+        """Normalise all fields to canonical case-stripped values."""
+        self.only_linters = _dedupe_strings(self.only_linters)
+        self.skip_linters = _dedupe_strings(self.skip_linters)
         if self.ignored_cves is not None:
-            self.ignored_cves = list(
-                dict.fromkeys(
-                    v.strip().upper() for v in self.ignored_cves if v.strip()
-                )
-            )
+            self.ignored_cves = _dedupe_strings(self.ignored_cves, upper=True)
+        if self.ignore_vulns is not None:
+            self.ignore_vulns = _dedupe_strings(self.ignore_vulns, upper=True)
 
     def save(self, path: Path | None = None) -> None:
         """Normalise and persist the current configuration to a TOML file.
@@ -114,5 +124,8 @@ class Config:
         if self.ignored_cves is not None:
             lines.append("\n[safety]\n")
             lines.append(f"ignore_cves = {self.ignored_cves}\n")
+        if self.ignore_vulns is not None:
+            lines.append("\n[pip-audit]\n")
+            lines.append(f"ignore_vulns = {self.ignore_vulns}\n")
 
         config_path.write_text("".join(lines), encoding="utf-8")

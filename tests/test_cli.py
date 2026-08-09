@@ -1,6 +1,7 @@
 """Tests for the Sanopy CLI interface."""
 # pylint: disable=redefined-outer-name
 
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -321,7 +322,7 @@ def test_cli_scan_verbose_option_not_available(tmp_path) -> None:
     result = runner.invoke(main, ["scan", str(test_file), "--verbose"])
 
     assert result.exit_code != 0
-    assert "No such option: --verbose" in result.output
+    assert "No such option '--verbose'" in result.output
 
 
 def test_cli_scan_only_filter(mocker, tmp_path) -> None:
@@ -360,8 +361,9 @@ def test_cli_scan_skip_filter(mocker, tmp_path) -> None:
 
     args, kwargs = mock_engine.call_args
     linters = kwargs.get("linters", []) or (args[0] if args else [])
-    assert len(linters) == 3
+    assert len(linters) == 4
     remaining_names = [linter.__class__.__name__ for linter in linters]
+    assert "PipAuditLinter" in remaining_names
     assert "VultureLinter" in remaining_names
     assert "RadonLinter" in remaining_names
     assert "SafetyLinter" in remaining_names
@@ -385,6 +387,58 @@ def test_cli_scan_safety_receives_ignored_cves(mocker, tmp_path) -> None:
     linters = kwargs.get("linters", []) or (args[0] if args else [])
     assert len(linters) == 1
     assert linters[0].ignored_cves == ["CVE-2026-0994"]
+
+
+def test_cli_scan_pip_audit_receives_ignore_vulns(mocker, tmp_path) -> None:
+    """Test that the pip-audit linter is built with config-supplied ignores."""
+    runner = CliRunner()
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("print(1)\n", encoding="utf-8")
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Config.load",
+        return_value=Config(ignore_vulns=["PYSEC-2026-3482"]),
+    )
+    mock_engine = mocker.patch("sanopy.cli.scan_handler.Engine")
+
+    runner.invoke(main, ["scan", str(test_file), "--only", "pip-audit"])
+
+    args, kwargs = mock_engine.call_args
+    linters = kwargs.get("linters", []) or (args[0] if args else [])
+    assert len(linters) == 1
+    assert linters[0].ignore_vulns == ["PYSEC-2026-3482"]
+
+
+def test_cli_scan_pip_audit_findings_are_errors(mocker, tmp_path) -> None:
+    """Test pip-audit findings normalize to the error severity bucket."""
+    import json
+
+    runner = CliRunner()
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("print(1)\n", encoding="utf-8")
+
+    fake_result = LinterResult(
+        file_path=Path("pyproject.toml"),
+        line_start=1,
+        line_end=None,
+        col_start=None,
+        col_end=None,
+        linter_name="Pip-Audit",
+        error_code="VULN-PYSEC-2019-179",
+        message="[UNKNOWN] flask==0.5 (PYSEC-2019-179) — security issue.",
+        snippet_context="",
+    )
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        return_value=[fake_result],
+    )
+
+    result = runner.invoke(main, ["scan", str(test_file)])
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["findings"][0]["linter"]["normalized_severity"] == "error"
 
 
 def test_cli_init_command(mocker) -> None:
@@ -601,7 +655,6 @@ def test_scan_reporter_write_human_readable_report(
 ) -> None:
     """write_human_readable_report writes a markdown file in the cwd."""
     import os
-    from pathlib import Path
 
     from sanopy.cli.scan_handler import ScanReporter
 

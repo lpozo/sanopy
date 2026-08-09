@@ -19,6 +19,7 @@ from rich.table import Table
 from sanopy.cli.ui import console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, BaseLinter, Engine
+from sanopy.linters.pip_audit import PipAuditLinter
 from sanopy.linters.result import LinterResult
 from sanopy.linters.safety import SafetyLinter
 
@@ -192,6 +193,8 @@ def _build_linter(name: str, config: Config) -> BaseLinter:
     linter_cls = LINTER_MAP[name]
     if name == "safety":
         return SafetyLinter(ignored_cves=config.ignored_cves)
+    if name == "pip-audit":
+        return PipAuditLinter(ignore_vulns=config.ignore_vulns)
     return linter_cls()
 
 
@@ -291,7 +294,14 @@ class ScanReporter:
         linter = result.linter_name.lower()
         code = result.error_code.upper()
 
-        if linter in {"bandit", "safety", "semgrep", "mypy", "pyright"}:
+        if linter in {
+            "bandit",
+            "pip-audit",
+            "safety",
+            "semgrep",
+            "mypy",
+            "pyright",
+        }:
             return "error"
         if code.startswith(("E", "F", "B")):
             return "error"

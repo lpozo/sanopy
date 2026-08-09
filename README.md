@@ -128,6 +128,7 @@ You can also set default `only_linters` and `skip_linters` values in
 | [Vulture](https://github.com/jendrikseipp/vulture) | Dead code | Unused variables, functions |
 | [Radon](https://github.com/rubik/radon) | Complexity | Cyclomatic complexity |
 | [Safety](https://github.com/pyupio/safety) | Dependencies | Known vulnerabilities |
+| [pip-audit](https://github.com/pypa/pip-audit) | Dependencies | Known vulnerabilities in dependency tree |
 
 ## Configuration File
 
@@ -144,11 +145,17 @@ skip_linters = []
 
 [safety]
 ignore_cves = ["CVE-2026-0994"]
+
+[pip-audit]
+ignore_vulns = ["PYSEC-2026-3482"]
 ```
 
 The `[safety]` section lists CVE IDs that the Safety linter should
 suppress. By default a small set of known-unresolvable CVEs is ignored;
 set `ignore_cves = []` to disable all suppressions.
+
+The `[pip-audit]` section lists vulnerability IDs (or aliases) that the
+pip-audit linter should suppress, matched by primary ID or alias.
 
 Example CI step:
 
