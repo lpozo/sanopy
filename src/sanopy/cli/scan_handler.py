@@ -18,8 +18,9 @@ from rich.table import Table
 
 from sanopy.cli.ui import console
 from sanopy.config import Config
-from sanopy.linters import LINTER_MAP, Engine
+from sanopy.linters import LINTER_MAP, BaseLinter, Engine
 from sanopy.linters.result import LinterResult
+from sanopy.linters.safety import SafetyLinter
 
 
 async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional-arguments
@@ -46,7 +47,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
         output_mode: Controls whether terminal output is machine-only JSON
             or human-focused progress and summaries.
         human_readable: When ``True``, also writes a markdown report to
-            ``linting-report.md``.
+            ``linting-report-<target>.md``.
 
     Returns:
         Number of findings emitted for the target.
@@ -58,7 +59,9 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     active_linters = _get_active_linters(config, only, skip)
 
     # Use the linter mapping to instantiate the active linters
-    engine = Engine(linters=[LINTER_MAP[name]() for name in active_linters])
+    engine = Engine(
+        linters=[_build_linter(name, config) for name in active_linters]
+    )
     results = await _run_linters(engine, target, active_linters, output_mode)
 
     # Logical Sort: by file then line
@@ -167,6 +170,22 @@ def _get_active_linters(
             name for name in active_linters if name not in skip_list
         ]
     return active_linters
+
+
+def _build_linter(name: str, config: Config) -> BaseLinter:
+    """Instantiate a linter, passing config-dependent settings when needed.
+
+    Args:
+        name: Lowercase linter name from the active linter list.
+        config: The loaded configuration.
+
+    Returns:
+        A configured linter instance.
+    """
+    linter_cls = LINTER_MAP[name]
+    if name == "safety":
+        return SafetyLinter(ignored_cves=config.ignored_cves)
+    return linter_cls()
 
 
 class ScanReporter:
@@ -289,17 +308,12 @@ class ScanReporter:
 
     def get_human_readable_path(self) -> Path:
         """Return the markdown report path for the current scan target."""
-        if self.output is None:
-            target_name = (
-                self.target.stem if self.target.is_file() else self.target.name
-            )
-            report_name = f"linting-report-{target_name}.md"
-            return Path(report_name)
         target_name = (
             self.target.stem if self.target.is_file() else self.target.name
         )
         report_name = f"linting-report-{target_name}.md"
-        return self.output.parent / report_name
+        base = self.output.parent if self.output else Path()
+        return base / report_name
 
     def write_human_readable_report(self, *, announce: bool = True) -> None:
         """Write a markdown report for human-readable sharing."""
