@@ -195,7 +195,7 @@ def _build_linter(name: str, config: Config) -> BaseLinter:
         return SafetyLinter(ignored_cves=config.ignored_cves)
     if name == "pip-audit":
         return PipAuditLinter(ignore_vulns=config.ignore_vulns)
-    return linter_cls()
+    return linter_cls(config=config)
 
 
 class ScanReporter:

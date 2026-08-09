@@ -12,6 +12,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Support for Ruff, Pylint, Bandit, MyPy, Pyright, Semgrep, Vulture, Radon, and Safety.
 - Support for pip-audit, a dependency vulnerability scanner for Python environments.
 - Configurable pip-audit suppressions via the `[pip-audit] ignore_vulns` setting in `.sanopy.toml`.
+- Bundled linter defaults (pylint, bandit, ruff) moved to `[linters.<name>]` sections in `.sanopy.toml`; suppression and linter defaults materialize at init/reset.
 - Interactive onboarding wizard (`sanopy init`) for default linter selection.
 - Standardized `LinterResult` model for unified issue representation.
 - Semantic context extraction (function/class boundaries) for richer scan output.

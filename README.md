@@ -143,6 +143,16 @@ The `.sanopy.toml` file controls linter defaults for the current project.
 only_linters = []
 skip_linters = []
 
+[linters.pylint]
+disable = ["duplicate-code", "too-many-locals"]
+
+[linters.bandit]
+skips = []
+
+[linters.ruff]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "C4", "SIM", "PTH"]
+ignore = []
+
 [safety]
 ignore_cves = ["CVE-2026-0994"]
 
@@ -156,6 +166,13 @@ set `ignore_cves = []` to disable all suppressions.
 
 The `[pip-audit]` section lists vulnerability IDs (or aliases) that the
 pip-audit linter should suppress, matched by primary ID or alias.
+
+The optional `[linters.<name>]` sections provide the configuration that
+Sanopy passes to linters shipping bundled defaults (`pylint`, `bandit`,
+and `ruff`). A nested `[linters.<name>.test]` table overrides the
+settings used for test code. Sections and keys you omit fall back to the
+bundled defaults; a freshly generated `.sanopy.toml` materializes all of
+them so they are visible and editable.
 
 Example CI step:
 

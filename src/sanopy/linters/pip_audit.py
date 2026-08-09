@@ -4,15 +4,9 @@ import json
 from pathlib import Path
 from typing import Any
 
+from sanopy.config import DEFAULT_IGNORED_VULNS
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.result import LinterResult
-
-# Known vulnerabilities that cannot be resolved through the dependency tree.
-DEFAULT_IGNORED_VULNS = [
-    "PYSEC-2026-3481",
-    "PYSEC-2026-3482",
-    "PYSEC-2026-3483",
-]
 
 
 def _as_dependencies(data: object) -> list[dict[str, Any]]:
@@ -45,6 +39,7 @@ class PipAuditLinter(BaseLinter):
         self.ignore_vulns = (
             DEFAULT_IGNORED_VULNS if ignore_vulns is None else ignore_vulns
         )
+        super().__init__()
 
     def build_command(self, target: Path) -> list[str]:
         """Build the pip-audit command.

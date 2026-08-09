@@ -1,8 +1,20 @@
 """Logic for discovering linter configurations (local and bundled defaults)."""
 
-# Python 3.7 compatibility rule is irrelevant: sanopy requires >=3.12.
-from importlib import resources  # nosemgrep: python37-compatibility-importlib2
+from __future__ import annotations
+
+import json
+import tempfile
 from pathlib import Path
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from sanopy.config import LinterConfig
+
+BUNDLED_FILENAME_MAP = {
+    "pylint": ".pylintrc",
+    "bandit": "bandit.yaml",
+    "ruff": "ruff.toml",
+}
 
 
 def is_test_path(path: Path) -> bool:
@@ -24,41 +36,63 @@ def is_test_path(path: Path) -> bool:
     )
 
 
-def get_bundled_config_path(linter_name: str, category: str) -> Path | None:
-    """Retrieve the path to a bundled configuration file.
+def materialize_linter_config(
+    linter_name: str,
+    category: str,
+    linter_config: LinterConfig,
+) -> Path | None:
+    """Render and write a linter's native config from structured settings.
 
     Args:
-        linter_name: The name of the linter (e.g., 'pylint', 'bandit', 'ruff').
+        linter_name: The lowercase linter name (e.g., 'pylint', 'ruff').
         category: The code category ('default' or 'test').
+        linter_config: The configured settings to render.
 
     Returns:
-        A Path to the bundled config file, or None if not found.
+        The path to the written config file, or None when the linter has
+        no bundled config format.
     """
-    filename_map = {
-        "pylint": ".pylintrc",
-        "bandit": "bandit.yaml",
-        "ruff": "ruff.toml",
-    }
-    filename = filename_map.get(linter_name.lower())
-    if not filename:
+    if linter_name not in BUNDLED_FILENAME_MAP:
         return None
 
-    try:
-        # Construct resource package path
-        resource_pkg = f"sanopy.linters.configs.{category}"
-        # When installed as a regular package, we can get the path directly.
-        # importlib.resources.files() is the modern way.
-        resource_path = resources.files(resource_pkg).joinpath(filename)
-        # We need an actual file path.
-        # If it's a real file (not in zip), .resolve() gives
-        # us the absolute path.
-        if resource_path.is_file():
-            # In local development and most installations, it's a real file.
-            return Path(str(resource_path))
+    content = render_native_config(
+        linter_name, linter_config.effective(category)
+    )
+    if content is None:
+        return None
 
-        return None
-    except (ImportError, FileNotFoundError, TypeError):
-        return None
+    cache_dir = Path(tempfile.gettempdir()) / "sanopy" / "configs" / category
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    path = cache_dir / BUNDLED_FILENAME_MAP[linter_name]
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def render_native_config(
+    linter_name: str, settings: dict[str, list[str]]
+) -> str | None:
+    """Render native config file content for a linter.
+
+    Args:
+        linter_name: The lowercase linter name (e.g., 'pylint', 'ruff').
+        settings: The effective settings for the category.
+
+    Returns:
+        The config file content, or None for unsupported linters.
+    """
+    if linter_name == "pylint":
+        disable = settings.get("disable") or []
+        return f"[MESSAGES CONTROL]\ndisable={','.join(disable)}\n"
+    if linter_name == "bandit":
+        skips = settings.get("skips") or []
+        return f"skips: {skips!r}\n"
+    if linter_name == "ruff":
+        lines = ["[lint]"]
+        for key in ("select", "ignore"):
+            if key in settings:
+                lines.append(f"{key} = {json.dumps(settings[key])}")
+        return "\n".join(lines) + "\n"
+    return None
 
 
 def find_nearest_local_config(

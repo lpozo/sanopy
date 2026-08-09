@@ -17,6 +17,7 @@ class MockLinter(BaseLinter):
         return_list: list[LinterResult] | None = None,
         error: Exception | None = None,
     ) -> None:
+        super().__init__()
         self.name = name
         self._returns = return_list or []
         self._error = error

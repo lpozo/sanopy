@@ -1,3 +1,28 @@
 [linters]
 only_linters = []
 skip_linters = []
+
+[linters.bandit]
+skips = []
+
+[linters.bandit.test]
+skips = ['B101']
+
+[linters.ruff]
+select = ['E', 'F', 'W', 'I', 'N', 'UP', 'B', 'A', 'C4', 'SIM', 'PTH']
+ignore = []
+
+[linters.ruff.test]
+ignore = ['S101', 'ARG001']
+
+[linters.pylint]
+disable = ['duplicate-code', 'too-many-locals']
+
+[linters.pylint.test]
+disable = ['C0415', 'W0621', 'W0613', 'W0612', 'C0116', 'R0913', 'R0917', 'R0801']
+
+[safety]
+ignore_cves = ['CVE-2026-0994']
+
+[pip-audit]
+ignore_vulns = ['PYSEC-2026-3481', 'PYSEC-2026-3482', 'PYSEC-2026-3483']

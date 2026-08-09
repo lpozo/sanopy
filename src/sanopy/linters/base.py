@@ -1,18 +1,25 @@
 """Abstract base class for all linters."""
 
+from __future__ import annotations
+
 import abc
 import asyncio
 import shutil
 import sys
 from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
+from sanopy.config import DEFAULT_LINTER_CONFIGS
 from sanopy.linters.config_discovery import (
     find_nearest_local_config,
-    get_bundled_config_path,
     is_test_path,
+    materialize_linter_config,
 )
 from sanopy.linters.result import LinterResult
+
+if TYPE_CHECKING:
+    from sanopy.config import Config
 
 
 @dataclass  # pylint: disable=too-few-public-methods
@@ -28,6 +35,15 @@ class BaseLinter(abc.ABC):
     """Abstract base class for all linters."""
 
     name: str
+
+    def __init__(self, config: Config | None = None) -> None:
+        """Initialize the linter.
+
+        Args:
+            config: The active configuration, used to resolve bundled
+                linter settings. Defaults to ``None``.
+        """
+        self.config = config
 
     @abc.abstractmethod
     def build_command(self, target: Path) -> list[str]:
@@ -102,9 +118,19 @@ class BaseLinter(abc.ABC):
         if local_config:
             return local_config
 
-        # 2. Fallback to bundled default based on category
+        # 2. Fallback to bundled settings, from the config when available
+        #    or the built-in defaults otherwise.
         category = "test" if is_test_path(target) else "default"
-        return get_bundled_config_path(self.name, category)
+        linter_config = None
+        if self.config:
+            linter_config = self.config.linter_configs.get(self.name.lower())
+        if linter_config is None:
+            linter_config = DEFAULT_LINTER_CONFIGS.get(self.name.lower())
+        if linter_config is not None:
+            return materialize_linter_config(
+                self.name.lower(), category, linter_config
+            )
+        return None
 
     async def _run_command(
         self, cmd: list[str], cwd: Path
