@@ -5,8 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from sanopy.config import DEFAULT_IGNORED_CVES
 from sanopy.linters.base import AsyncCompletedProcess
-from sanopy.linters.safety import DEFAULT_IGNORED_CVES, SafetyLinter
+from sanopy.linters.safety import SafetyLinter
 
 
 @pytest.fixture

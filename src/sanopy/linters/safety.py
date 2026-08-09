@@ -4,11 +4,9 @@ import json
 import re
 from pathlib import Path
 
+from sanopy.config import DEFAULT_IGNORED_CVES
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.result import LinterResult
-
-# Known CVEs that cannot be resolved through the dependency tree.
-DEFAULT_IGNORED_CVES = ["CVE-2026-0994"]
 
 
 class SafetyLinter(BaseLinter):
@@ -26,6 +24,7 @@ class SafetyLinter(BaseLinter):
         self.ignored_cves = (
             DEFAULT_IGNORED_CVES if ignored_cves is None else ignored_cves
         )
+        super().__init__()
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Safety command.

@@ -2,7 +2,13 @@
 
 import pytest
 
-from sanopy.config import Config
+from sanopy.config import (
+    DEFAULT_IGNORED_CVES,
+    DEFAULT_IGNORED_VULNS,
+    DEFAULT_LINTER_CONFIGS,
+    Config,
+    LinterConfig,
+)
 
 
 @pytest.mark.parametrize(
@@ -91,7 +97,9 @@ def test_config_load_creates_defaults(tmp_path) -> None:
     assert config_file.exists()
     assert not config.only_linters
     assert not config.skip_linters
-    assert config.ignored_cves is None
+    assert config.ignored_cves == DEFAULT_IGNORED_CVES
+    assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
+    assert config.linter_configs == DEFAULT_LINTER_CONFIGS
 
 
 @pytest.mark.parametrize(
@@ -112,10 +120,12 @@ def test_config_invalid_file_resets_to_defaults(
 
     assert not config.only_linters
     assert not config.skip_linters
-    assert config.ignored_cves is None
+    assert config.ignored_cves == DEFAULT_IGNORED_CVES
+    assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
     # The file is overwritten with valid defaults
     reloaded = Config.load(config_file)
     assert not reloaded.only_linters
+    assert reloaded.ignored_cves == DEFAULT_IGNORED_CVES
 
 
 def test_config_ignores_unknown_linter_keys(tmp_path) -> None:
@@ -196,3 +206,107 @@ def test_config_load_pip_audit_only(tmp_path) -> None:
     assert loaded.ignore_vulns == ["PYSEC-2026-3482"]
     assert not loaded.only_linters
     assert not loaded.skip_linters
+
+
+def test_config_save_writes_linter_sections(tmp_path) -> None:
+    """Test that save writes [linters.<name>] sections and test overrides."""
+    config_file = tmp_path / "sanopy.toml"
+    Config(
+        linter_configs={
+            "ruff": LinterConfig(
+                settings={"select": ["E"], "ignore": []},
+                test={"ignore": ["S101"]},
+            )
+        }
+    ).save(config_file)
+
+    content = config_file.read_text(encoding="utf-8")
+    assert "[linters.ruff]" in content
+    assert "select = ['E']" in content
+    assert "[linters.ruff.test]" in content
+    assert "ignore = ['S101']" in content
+
+
+def test_config_roundtrip_linter_configs(tmp_path) -> None:
+    """Test that per-linter settings round-trip through save/load."""
+    config_file = tmp_path / "sanopy.toml"
+    original = Config(
+        linter_configs={
+            "ruff": LinterConfig(
+                settings={"select": ["E", "F"], "ignore": ["S101"]},
+                test={"ignore": ["S101", "ARG001"]},
+            )
+        }
+    )
+    original.save(config_file)
+
+    loaded = Config.load(config_file)
+
+    assert loaded.linter_configs["ruff"].settings == {
+        "select": ["E", "F"],
+        "ignore": ["S101"],
+    }
+    assert loaded.linter_configs["ruff"].test == {"ignore": ["S101", "ARG001"]}
+
+
+def test_config_load_merges_default_linter_settings(tmp_path) -> None:
+    """Test that a partial section keeps the bundled defaults for gaps."""
+    config_file = tmp_path / "test.toml"
+    config_file.write_text(
+        '[linters.ruff]\nignore = ["X"]\n', encoding="utf-8"
+    )
+
+    loaded = Config.load(config_file)
+
+    ruff = loaded.linter_configs["ruff"]
+    assert ruff.settings["ignore"] == ["X"]
+    assert "E" in ruff.settings["select"]
+    assert ruff.test == {"ignore": ["S101", "ARG001"]}
+
+
+def test_config_load_test_section_overrides_defaults(tmp_path) -> None:
+    """Test that a [linters.<name>.test] section overrides the default."""
+    config_file = tmp_path / "test.toml"
+    config_file.write_text(
+        '[linters.bandit]\nskips = ["B101"]\n'
+        "[linters.bandit.test]\nskips = []\n",
+        encoding="utf-8",
+    )
+
+    loaded = Config.load(config_file)
+
+    bandit = loaded.linter_configs["bandit"]
+    assert bandit.settings["skips"] == ["B101"]
+    assert bandit.test == {"skips": []}
+
+
+def test_config_normalizes_linter_config_values(tmp_path) -> None:
+    """Test that linter settings are stripped and deduplicated."""
+    config_file = tmp_path / "test.toml"
+    config_file.write_text(
+        '[linters.pylint]\ndisable = [" C0415 ", "C0415", "W0621"]\n',
+        encoding="utf-8",
+    )
+
+    loaded = Config.load(config_file)
+
+    assert loaded.linter_configs["pylint"].settings["disable"] == [
+        "C0415",
+        "W0621",
+    ]
+
+
+def test_config_materializes_defaults_when_missing(tmp_path) -> None:
+    """Test that a missing config file is created with all default sections."""
+    config_file = tmp_path / "non_existent.toml"
+    config = Config.load(config_file)
+
+    assert config.ignored_cves == DEFAULT_IGNORED_CVES
+    assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
+    assert config.linter_configs == DEFAULT_LINTER_CONFIGS
+
+    content = config_file.read_text(encoding="utf-8")
+    assert "[safety]" in content
+    assert "[pip-audit]" in content
+    for name in ("pylint", "bandit", "ruff"):
+        assert f"[linters.{name}]" in content

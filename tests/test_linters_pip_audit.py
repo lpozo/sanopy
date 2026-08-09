@@ -5,11 +5,9 @@ from pathlib import Path
 
 import pytest
 
+from sanopy.config import DEFAULT_IGNORED_VULNS
 from sanopy.linters.base import AsyncCompletedProcess
-from sanopy.linters.pip_audit import (
-    DEFAULT_IGNORED_VULNS,
-    PipAuditLinter,
-)
+from sanopy.linters.pip_audit import PipAuditLinter
 
 
 @pytest.fixture
