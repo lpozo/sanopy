@@ -1,6 +1,6 @@
 [project]
 name = "sanopy"
-version = "0.2.0"
+version = "0.2.1"
 description = "A CLI tool for improving the code quality of Python projects."
 readme = "README.md"
 requires-python = ">=3.12"

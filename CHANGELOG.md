@@ -6,6 +6,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-08-26
+
+### Fixed
+
+- CI: configure git identity before creating release tag.
+- CI: add `workflow_dispatch` trigger for manual publish.
+
 ## [0.2.0] - 2026-08-26
 
 ### Added
