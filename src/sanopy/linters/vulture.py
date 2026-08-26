@@ -12,6 +12,8 @@ class VultureLinter(BaseLinter):
     """Linter implementation for Vulture."""
 
     name = "Vulture"
+    package_name = "vulture"
+    module_name = "vulture"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Vulture command for the target path.

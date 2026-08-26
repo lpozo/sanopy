@@ -5,19 +5,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Self
 
-from rich.console import Console
-
 DEFAULT_CONFIG_PATH = Path(".sanopy.toml")
 
-# Known vulnerabilities that cannot be resolved through the dependency tree.
+# Vulnerabilities suppressed by default. `sanopy init` seeds these into a
+# new .sanopy.toml, so they suppress findings in *user* projects too. Keep
+# this list minimal and never add suppressions for findings that are
+# specific to Sanopy's own environment — put those in Sanopy's own
+# .sanopy.toml, which replaces (rather than extends) these defaults.
 DEFAULT_IGNORED_CVES = ["CVE-2026-0994"]
 DEFAULT_IGNORED_VULNS = [
     "PYSEC-2026-3481",
     "PYSEC-2026-3482",
     "PYSEC-2026-3483",
 ]
-
-_console = Console(stderr=True)
 
 
 def _strip_dedupe(values: list[str]) -> list[str]:
@@ -198,8 +198,15 @@ class Config:
     linter_configs: dict[str, LinterConfig] = field(default_factory=dict)
 
     @classmethod
-    def _defaults_with_materialized_sections(cls) -> Self:
-        """A config with all built-in defaults materialized for writing."""
+    def defaults(cls) -> Self:
+        """Build a config with all built-in defaults materialized.
+
+        Every optional section is filled in, so ``save()`` writes a
+        complete, self-documenting ``.sanopy.toml``.
+
+        Returns:
+            A Config instance holding the built-in defaults.
+        """
         return cls(
             ignored_cves=list(DEFAULT_IGNORED_CVES),
             ignore_vulns=list(DEFAULT_IGNORED_VULNS),
@@ -207,28 +214,42 @@ class Config:
         )
 
     @classmethod
+    def exists(cls, path: Path | None = None) -> bool:
+        """Check whether a configuration file exists on disk.
+
+        Args:
+            path: Path to check. Defaults to ``.sanopy.toml``.
+
+        Returns:
+            ``True`` if the file exists, ``False`` otherwise.
+        """
+        return (path or DEFAULT_CONFIG_PATH).exists()
+
+    @classmethod
     def load(cls, path: Path | None = None) -> Self:
         """Load configuration from a TOML file.
 
-        If the file does not exist, create it with default values.
+        This method is read-only and does not create or modify files.
+        Use ``Config.defaults()`` to build a config from the built-in
+        defaults, and ``config.save()`` to persist it.
 
         Args:
             path: Path to the configuration file. Defaults to .sanopy.toml.
 
         Returns:
             A Config instance.
+
+        Raises:
+            FileNotFoundError: If the configuration file does not exist.
+            ValueError: If the file exists but contains invalid TOML.
         """
         config_path = path or DEFAULT_CONFIG_PATH
 
         if not config_path.exists():
-            config = cls._defaults_with_materialized_sections()
-            config.save(config_path)
-            _console.print(
-                "[Sanopy] Created default configuration at "
-                f"{config_path}. Edit this file to customize "
-                "linter selection."
+            raise FileNotFoundError(
+                f"Configuration file not found: {config_path}. "
+                "Run 'sanopy init' to create one."
             )
-            return config
 
         try:
             with config_path.open("rb") as file:
@@ -252,14 +273,11 @@ class Config:
                 )
                 config._normalize()
                 return config
-        except (OSError, ValueError):
-            config = cls._defaults_with_materialized_sections()
-            config.save(config_path)
-            _console.print(
-                "[Sanopy] Invalid configuration detected. "
-                f"Reset to default at {config_path}."
-            )
-            return config
+        except (OSError, ValueError) as exc:
+            raise ValueError(
+                f"Invalid configuration at {config_path}. "
+                "Run 'sanopy init' to reset it."
+            ) from exc
 
     def _normalize(self) -> None:
         """Normalise all fields to canonical case-stripped values."""

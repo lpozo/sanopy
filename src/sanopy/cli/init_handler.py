@@ -1,43 +1,97 @@
 """Handler for the 'init' command."""
 
+from __future__ import annotations
+
+from typing import TYPE_CHECKING
+
 import click
+from click.exceptions import Exit as ClickExit
+from rich.markup import escape
 from rich.panel import Panel
 
-from sanopy.cli.ui import console
+from sanopy.cli.selection import format_install_hint, resolve_active_linters
+from sanopy.cli.ui import console, err_console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP
 
+if TYPE_CHECKING:
+    from sanopy.linters.base import BaseLinter
 
-def handle_init(only: str | None = None, skip: str | None = None) -> None:
-    """Execute the initialization flow (interactive or non-interactive)."""
+
+def handle_init(
+    only: str | None = None,
+    skip: str | None = None,
+    no_install: bool = False,
+) -> None:
+    """Execute the initialization flow (interactive or non-interactive).
+
+    Args:
+        only: Comma-separated linters to run exclusively by default.
+        skip: Comma-separated linters to skip by default.
+        no_install: When ``True``, never install missing linter packages.
+
+    Raises:
+        ClickExit: With code 2 when one or more installations fail.
+    """
     handler = InitHandler()
 
     if only is not None or skip is not None:
-        handler.handle_cli_options(only=only, skip=skip)
+        handler.handle_cli_options(only=only, skip=skip, no_install=no_install)
         return
 
-    handler.handle_interactive_options()
+    handler.handle_interactive_options(no_install=no_install)
 
 
 class InitHandler:
     """Coordinate init command flows for CLI and interactive modes."""
 
     def __init__(self) -> None:
-        """Initialize with the project config loaded from disk."""
-        self.config = Config.load()
+        """Initialize with the project config loaded from disk.
+
+        If the config file is missing or invalid, a default config is
+        created in memory (not yet persisted — ``save()`` is called
+        later after the user confirms choices). An invalid file is
+        reported, because saving will overwrite it.
+        """
+        try:
+            self.config = Config.load()
+        except FileNotFoundError:
+            self.config = Config.defaults()
+        except ValueError as exc:
+            err_console.print(
+                f"[yellow]{escape(str(exc))}[/yellow]\n"
+                "[yellow]Continuing with built-in defaults. Saving will "
+                "overwrite the existing file.[/yellow]"
+            )
+            self.config = Config.defaults()
         self.updater = ConfigUpdater(self.config)
 
     def handle_cli_options(
-        self, *, only: str | None = None, skip: str | None = None
+        self,
+        *,
+        only: str | None = None,
+        skip: str | None = None,
+        no_install: bool = False,
     ) -> None:
-        """Handle non-interactive configuration from CLI options."""
+        """Handle non-interactive configuration from CLI options.
+
+        Raises:
+            ClickExit: With code 2 when one or more installations fail.
+        """
         self.updater.apply_cli_config(only=only, skip=skip)
+
+        failed = 0 if no_install else _install_missing_linters(self.config)
 
         self.config.save()
         self.print_saved_summary()
+        _exit_on_install_failure(failed)
 
-    def handle_interactive_options(self) -> None:
-        """Handle interactive configuration prompts and confirmation."""
+    def handle_interactive_options(self, *, no_install: bool = False) -> None:
+        """Handle interactive configuration prompts and confirmation.
+
+        Raises:
+            ClickExit: With code 2 when one or more installations fail.
+        """
         console.print("[bold]Sanopy Setup Wizard[/bold]\n")
         self.updater.apply_interactive_config()
         self.print_setup_summary()
@@ -47,8 +101,13 @@ class InitHandler:
             )
             return
 
+        failed = (
+            0 if no_install else _prompt_install_missing_linters(self.config)
+        )
+
         self.config.save()
         self.print_saved_summary()
+        _exit_on_install_failure(failed)
 
     def print_setup_summary(self) -> None:
         """Print setup summary before asking for confirmation."""
@@ -185,3 +244,96 @@ class ConfigUpdater:
             ]
 
         return skip_linters, only_linters
+
+
+def _exit_on_install_failure(failed: int) -> None:
+    """Exit non-zero when installations failed.
+
+    ``init`` must not report success after failing to install linters, or
+    a following ``sanopy scan`` in the same script fails confusingly.
+
+    Args:
+        failed: Number of packages that failed to install.
+
+    Raises:
+        ClickExit: With code 2 when ``failed`` is non-zero.
+    """
+    if not failed:
+        return
+    err_console.print(f"[red]{failed} linter(s) could not be installed.[/red]")
+    raise ClickExit(2)
+
+
+def _get_missing_linters(config: Config) -> list[type[BaseLinter]]:
+    """Return the active linter classes that are not installed."""
+    return [
+        LINTER_MAP[name]
+        for name in resolve_active_linters(config)
+        if not LINTER_MAP[name].is_available()
+    ]
+
+
+def _install_linters(linter_classes: list[type[BaseLinter]]) -> int:
+    """Install a list of linter packages and report results.
+
+    Args:
+        linter_classes: The linter classes to install.
+
+    Returns:
+        The number of packages that failed to install.
+    """
+    failed = 0
+    for cls in linter_classes:
+        console.print(f"  Installing [cyan]{cls.package_name}[/cyan]...")
+        result = cls.install()
+        if result.succeeded:
+            console.print(f"  [green]{cls.package_name} installed.[/green]")
+            continue
+
+        failed += 1
+        err_console.print(
+            f"  [red]Failed to install {cls.package_name}.[/red]"
+        )
+        if result.output:
+            err_console.print(f"  [dim]{escape(result.output)}[/dim]")
+    return failed
+
+
+def _prompt_install_missing_linters(config: Config) -> int:
+    """Check for missing linters and prompt the user to install them.
+
+    Returns:
+        The number of packages that failed to install.
+    """
+    missing = _get_missing_linters(config)
+    if not missing:
+        return 0
+
+    names = ", ".join(cls.package_name for cls in missing)
+    console.print(
+        f"\n[yellow]The following linters are not installed:[/yellow] {names}"
+    )
+    if not click.confirm("Install them now?", default=True):
+        hint = format_install_hint([cls.package_name for cls in missing])
+        console.print(
+            "[dim]Skipping installation. "
+            f"You can install them later with:[/dim]\n  {escape(hint)}"
+        )
+        return 0
+
+    return _install_linters(missing)
+
+
+def _install_missing_linters(config: Config) -> int:
+    """Auto-install missing linters without prompting (non-interactive).
+
+    Returns:
+        The number of packages that failed to install.
+    """
+    missing = _get_missing_linters(config)
+    if not missing:
+        return 0
+
+    names = ", ".join(cls.package_name for cls in missing)
+    console.print(f"[yellow]Installing missing linters:[/yellow] {names}")
+    return _install_linters(missing)

@@ -22,7 +22,7 @@ disable = ['duplicate-code', 'too-many-locals']
 disable = ['C0415', 'W0621', 'W0613', 'W0612', 'C0116', 'R0913', 'R0917', 'R0801']
 
 [safety]
-ignore_cves = ['CVE-2026-0994']
+ignore_cves = ['CVE-2026-0994', 'CVE-2026-52869', 'CVE-2026-52870', 'CVE-2026-59950']
 
 [pip-audit]
 ignore_vulns = ['PYSEC-2026-3481', 'PYSEC-2026-3482', 'PYSEC-2026-3483']

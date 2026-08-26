@@ -14,6 +14,8 @@ class RadonLinter(BaseLinter):
     """Linter implementation for Radon (Cyclomatic Complexity)."""
 
     name = "Radon"
+    package_name = "radon"
+    module_name = "radon"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Radon command for the target path.

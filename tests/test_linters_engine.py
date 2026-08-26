@@ -9,7 +9,15 @@ from sanopy.linters.result import LinterResult
 
 
 class MockLinter(BaseLinter):
-    """A mock linter that returns predefined results or raises."""
+    """A mock linter that returns predefined results or raises.
+
+    ``package_name`` is ``echo`` so the linter really resolves and spawns
+    a harmless process; ``build_command`` puts ``echo`` first to match.
+    """
+
+    name = "MockLinter"
+    package_name = "echo"
+    module_name: str | None = None
 
     def __init__(
         self,
@@ -139,3 +147,37 @@ async def test_engine_progress_callback(
     await Engine(linters=linters).run_all(Path(), progress_callback=callback)
 
     assert len(calls) == linter_count
+
+
+@pytest.mark.parametrize(
+    "failing_names, expected_survivors",
+    [
+        pytest.param([], {"L0", "L1"}, id="none-fail"),
+        pytest.param(["L0"], {"L1"}, id="first-fails"),
+        pytest.param(["L1"], {"L0"}, id="second-fails"),
+        pytest.param(["L0", "L1"], set(), id="all-fail"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_engine_reports_failures_without_losing_results(
+    failing_names: list[str], expected_survivors: set[str], capsys
+) -> None:
+    """A failing linter is reported on stderr and does not stop the others.
+
+    Diagnostics must not go to stdout, which carries the JSON document in
+    machine mode.
+    """
+    linters: list[BaseLinter] = [
+        MockLinter(name, error=RuntimeError(f"boom {name}"))
+        if name in failing_names
+        else MockLinter(name, _results(name, 1))
+        for name in ("L0", "L1")
+    ]
+
+    results = await Engine(linters=linters).run_all(Path())
+
+    assert {r.linter_name for r in results} == expected_survivors
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    for name in failing_names:
+        assert f"boom {name}" in captured.err

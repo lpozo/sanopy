@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import abc
 import asyncio
+import importlib.util
 import shutil
+import subprocess  # nosec B404
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -31,10 +33,30 @@ class AsyncCompletedProcess:
     returncode: int
 
 
+@dataclass  # pylint: disable=too-few-public-methods
+class InstallResult:
+    """Outcome of an attempt to install a linter package."""
+
+    succeeded: bool
+    output: str
+
+
+class LinterNotAvailableError(RuntimeError):
+    """Raised when a linter cannot be resolved in any environment."""
+
+
 class BaseLinter(abc.ABC):
     """Abstract base class for all linters."""
 
     name: str
+
+    #: PyPI distribution name, which is also the console-script name.
+    package_name: str
+
+    #: Importable module usable as ``python -m <module_name>``. ``None``
+    #: when the package has no runnable module and must be invoked
+    #: through its console script (e.g. Semgrep rejects ``python -m``).
+    module_name: str | None = None
 
     def __init__(self, config: Config | None = None) -> None:
         """Initialize the linter.
@@ -44,6 +66,84 @@ class BaseLinter(abc.ABC):
                 linter settings. Defaults to ``None``.
         """
         self.config = config
+
+    @classmethod
+    def resolve_command(cls, args: list[str]) -> list[str] | None:
+        """Resolve the argv used to invoke this linter, if it is installed.
+
+        Three invocation strategies are tried, in order:
+
+        1. The console script, when it is on ``PATH``.
+        2. The console script sitting beside the running interpreter.
+           This reaches Sanopy's own environment when its ``bin``
+           directory is not exported on ``PATH`` — a non-activated
+           virtualenv, or a ``pipx`` / ``uv tool`` install. It is the
+           only rung that can find a script-only linter there.
+        3. ``python -m <module_name>`` in that same interpreter.
+
+        ``is_available`` is defined in terms of this method so that the
+        availability check can never disagree with the invocation.
+
+        Args:
+            args: Arguments to append after the resolved executable.
+
+        Returns:
+            The full argv, or ``None`` when the linter is not installed.
+        """
+        binary = shutil.which(cls.package_name)
+        if binary:
+            return [binary, *args]
+
+        sibling = shutil.which(
+            cls.package_name, path=str(Path(sys.executable).parent)
+        )
+        if sibling:
+            return [sibling, *args]
+
+        if cls.module_name and importlib.util.find_spec(cls.module_name):
+            return [sys.executable, "-m", cls.module_name, *args]
+        return None
+
+    @classmethod
+    def is_available(cls) -> bool:
+        """Check whether the linter can be invoked from this environment.
+
+        Returns:
+            ``True`` if the linter resolves to a runnable command.
+        """
+        return cls.resolve_command([]) is not None
+
+    @classmethod
+    def install(cls) -> InstallResult:
+        """Install the linter package into the environment Sanopy runs from.
+
+        Both branches target ``sys.executable`` explicitly so that the
+        package lands in the same environment ``resolve_command`` probes.
+        ``uv`` is preferred when present because it is markedly faster.
+
+        Returns:
+            An ``InstallResult`` carrying the outcome and, on failure,
+            the combined installer output for diagnostics.
+        """
+        cmd: list[str]
+        if shutil.which("uv"):
+            cmd = [
+                "uv",
+                "pip",
+                "install",
+                "--python",
+                sys.executable,
+                cls.package_name,
+            ]
+        else:
+            cmd = [sys.executable, "-m", "pip", "install", cls.package_name]
+        result = subprocess.run(  # nosec B603
+            cmd, capture_output=True, text=True, check=False
+        )
+        return InstallResult(
+            succeeded=result.returncode == 0,
+            output=(result.stderr or result.stdout).strip(),
+        )
 
     @abc.abstractmethod
     def build_command(self, target: Path) -> list[str]:
@@ -81,23 +181,22 @@ class BaseLinter(abc.ABC):
 
         Returns:
             A list of standardized linter results.
+
+        Raises:
+            LinterNotAvailableError: If the linter is not installed.
         """
+        # build_command() puts the linter's own name first; resolve_command
+        # supplies the real executable, so that element is dropped.
         cmd = self.build_command(target)
-        prefix = self._get_command_prefix()
-        full_cmd = prefix + cmd
+        full_cmd = self.resolve_command(cmd[1:])
+        if full_cmd is None:
+            raise LinterNotAvailableError(
+                f"{self.name} is not installed in this environment "
+                f"(install it with: pip install 'sanopy[{self.package_name}]')"
+            )
 
         process_result = await self._run_command(full_cmd, Path.cwd())
         return self.parse_output(process_result, target)
-
-    def _get_command_prefix(self) -> list[str]:
-        """Check for 'uv' or fall back to the current python executable.
-
-        Returns:
-            ["uv", "run"] if uv is present, otherwise [sys.executable, "-m"].
-        """
-        if shutil.which("uv"):
-            return ["uv", "run"]
-        return [sys.executable, "-m"]
 
     def _get_effective_config_path(
         self, target: Path, candidate_filenames: list[str]

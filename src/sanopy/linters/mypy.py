@@ -12,6 +12,8 @@ class MyPyLinter(BaseLinter):
     """Linter implementation for MyPy (Static type checker)."""
 
     name = "MyPy"
+    package_name = "mypy"
+    module_name = "mypy"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the MyPy command for the target path.

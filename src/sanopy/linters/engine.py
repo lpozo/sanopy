@@ -1,6 +1,7 @@
 """Engine to orchestrate multiple linters."""
 
 import asyncio
+import sys
 from collections.abc import Callable
 from pathlib import Path
 
@@ -44,8 +45,10 @@ class Engine:
                 results = await coro
                 all_results.extend(results)
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                # Log the error but keep results from other linters
-                print(f"Linter task failed: {exc}")
+                # Log the error but keep results from other linters.
+                # Diagnostics go to stderr so they never corrupt the JSON
+                # document machine mode writes to stdout.
+                print(f"Linter task failed: {exc}", file=sys.stderr)
             finally:
                 if progress_callback:
                     progress_callback()

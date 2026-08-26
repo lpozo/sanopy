@@ -7,6 +7,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
+from click.exceptions import Exit as ClickExit
+from rich.markup import escape
 from rich.progress import (
     BarColumn,
     Progress,
@@ -16,7 +18,12 @@ from rich.progress import (
 )
 from rich.table import Table
 
-from sanopy.cli.ui import console
+from sanopy.cli.selection import (
+    format_install_hint,
+    parse_linter_names,
+    resolve_active_linters,
+)
+from sanopy.cli.ui import console, err_console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, BaseLinter, Engine
 from sanopy.linters.pip_audit import PipAuditLinter
@@ -24,10 +31,88 @@ from sanopy.linters.result import LinterResult
 from sanopy.linters.safety import SafetyLinter
 
 
+def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
+    """Validate the environment once before any target is scanned.
+
+    Both checks are per-run rather than per-target, so a multi-target
+    scan reports a problem once instead of once per target. Diagnostics
+    go to stderr to keep machine-mode stdout a valid JSON document.
+
+    Args:
+        only: Optional comma-separated linter names to run exclusively.
+        skip: Optional comma-separated linter names to exclude.
+
+    Returns:
+        The loaded config and the ordered list of active linter names.
+
+    Raises:
+        ClickExit: With code 2 when the config is missing or unreadable,
+            when the filters select no linters at all, or when an active
+            linter is not installed.
+    """
+    if not Config.exists():
+        err_console.print(
+            "[yellow]No .sanopy.toml found.[/yellow] "
+            "Run [bold]sanopy init[/bold] to set up sanopy first."
+        )
+        raise ClickExit(2)
+
+    try:
+        config = Config.load()
+    except (FileNotFoundError, ValueError) as exc:
+        err_console.print(f"[red]{escape(str(exc))}[/red]")
+        raise ClickExit(2) from exc
+
+    active_linters = resolve_active_linters(config, only, skip)
+    if not active_linters:
+        _report_no_linters_selected(config, only, skip)
+
+    missing = [
+        name for name in active_linters if not LINTER_MAP[name].is_available()
+    ]
+    if missing:
+        hint = format_install_hint(
+            [LINTER_MAP[name].package_name for name in missing]
+        )
+        err_console.print(
+            f"[red]Missing linters:[/red] {', '.join(missing)}\n"
+            f"[dim]Install with: {escape(hint)}[/dim]"
+        )
+        raise ClickExit(2)
+
+    return config, active_linters
+
+
+def _report_no_linters_selected(
+    config: Config, only: str | None, skip: str | None
+) -> None:
+    """Fail when the filters leave nothing to run.
+
+    Running zero linters otherwise reports "No issues found" and exits 0,
+    so a typo like ``--only rufff`` looks exactly like a clean scan.
+
+    Raises:
+        ClickExit: Always, with code 2.
+    """
+    requested = parse_linter_names(
+        only, config.only_linters
+    ) + parse_linter_names(skip, config.skip_linters)
+    unknown = sorted({n for n in requested if n not in LINTER_MAP})
+
+    lines = ["[red]No linters selected.[/red]"]
+    if unknown:
+        lines.append(
+            f"[dim]Unknown linter name(s): {', '.join(unknown)}[/dim]"
+        )
+    lines.append(f"[dim]Available: {', '.join(sorted(LINTER_MAP))}[/dim]")
+    err_console.print("\n".join(lines))
+    raise ClickExit(2)
+
+
 async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional-arguments
     target: Path,
-    only: str | None,
-    skip: str | None,
+    config: Config,
+    active_linters: list[str],
     output: Path | None,
     output_mode: Literal["machine", "human"] = "machine",
     human_readable: bool = False,
@@ -40,10 +125,8 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
 
     Args:
         target: The file or directory to scan.
-        only: Optional comma-separated list of linter names to run exclusively.
-            Overrides the ``only_linters`` value from config.
-        skip: Optional comma-separated list of linter names to skip.
-            Overrides the ``skip_linters`` value from config.
+        config: The configuration resolved by ``preflight``.
+        active_linters: The linter names resolved by ``preflight``.
         output: Optional path to a JSON file where results will be saved.
         output_mode: Controls whether terminal output is machine-only JSON
             or human-focused progress and summaries.
@@ -57,9 +140,6 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     """
     if output_mode == "human":
         console.print(f"[bold blue]Scanning {target}...[/bold blue]")
-
-    config = Config.load()
-    active_linters = _get_active_linters(config, only, skip)
 
     # Use the linter mapping to instantiate the active linters
     engine = Engine(
@@ -134,50 +214,6 @@ def _render_scan_output(
         reporter.print_fix_hint()
         return None
     return reporter.serialize_stdout()
-
-
-def _parse_linter_names(names: str | None, default: list[str]) -> list[str]:
-    """Parse a comma-separated linter name string into a normalised list.
-
-    Args:
-        names: Comma-separated linter names, or ``None`` to use the default.
-        default: The list to return when ``names`` is ``None`` or empty.
-
-    Returns:
-        A list of lowercase linter name strings.
-    """
-    if not names:
-        return default
-    return [name.strip().lower() for name in names.split(",")]
-
-
-def _get_active_linters(
-    config: Config, only: str | None, skip: str | None
-) -> list[str]:
-    """Determine which linters to run based on config and CLI flag overrides.
-
-    CLI flags take precedence over config file values. ``only`` is applied
-    before ``skip``.
-
-    Args:
-        config: The loaded configuration supplying default filter lists.
-        only: Optional comma-separated linter names to run exclusively.
-        skip: Optional comma-separated linter names to exclude.
-
-    Returns:
-        An ordered list of active linter name strings.
-    """
-    only_list = _parse_linter_names(only, config.only_linters)
-    skip_list = _parse_linter_names(skip, config.skip_linters)
-
-    active_linters = list(LINTER_MAP.keys())
-    if only_list:
-        active_linters = [name for name in active_linters if name in only_list]
-    if skip_list:
-        active_linters = [
-            name for name in active_linters if name not in skip_list
-        ]
-    return active_linters
 
 
 def _build_linter(name: str, config: Config) -> BaseLinter:

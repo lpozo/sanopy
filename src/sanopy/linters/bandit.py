@@ -12,6 +12,8 @@ class BanditLinter(BaseLinter):
     """Linter implementation for Bandit (Security scanner)."""
 
     name = "Bandit"
+    package_name = "bandit"
+    module_name = "bandit"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Bandit command for the target path.

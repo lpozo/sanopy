@@ -1,48 +1,29 @@
 # Copilot Workspace Instructions for Sanopy
 
-## Overview
-**Sanopy** is a linting orchestrator for Python projects.
+## Read [AGENTS.md](../AGENTS.md) first
 
-Scope in this repository:
-- Linter orchestration and reporting only.
-- No AI provider, model, or auto-fix pipeline.
-- CLI commands are `scan` and `init`.
+**[AGENTS.md](../AGENTS.md) is the single source of truth** for this
+repository: scope, commands, architecture, non-obvious behavior, and
+conventions all live there. Read it before making changes, and follow it.
 
-## Build & Test Commands
-```bash
-uv sync                        # Install dependencies
-uv run sanopy init             # Interactive linter defaults setup
-uv run sanopy scan src/        # Run linters and collect issues
-uv run sanopy scan src/ -r     # Also generate linting-report.md output
-uv run pytest                  # Run test suite
-```
+This file intentionally does **not** restate that content. An earlier
+version did, and it drifted badly out of date — it was still describing a
+linter-invocation strategy that had been replaced. If anything here ever
+appears to conflict with AGENTS.md, **AGENTS.md wins**; treat the
+conflict as a bug in this file and fix it.
 
-## Project Structure
-```
-src/sanopy/
-  cli/            # CLI entry point and handlers (main.py, scan_handler.py, init_handler.py)
-  linters/        # Linter integrations: bandit, mypy, pylint, pyright, radon, ruff, safety, semgrep, vulture
-                  #   engine.py = async orchestration, base.py = abstract base, result.py = normalized findings
-                  #   context.py = snippet/context extraction for lint reports
-  config.py       # Config: only_linters, skip_linters; normalized on load/save
-```
+What AGENTS.md covers, and where to look:
 
-## Key Conventions
-- **Async orchestration**: Linters run concurrently via `Engine.run_all()` using `asyncio`.
-- **Linter contract**: Each linter subclass implements `build_command()` and `parse_output()` from `BaseLinter`.
-- **Config normalization**: `Config` lowercases and deduplicates linter lists on load/save.
-- **Filtering behavior**: `--only` is applied before `--skip`.
-- **Scan outputs**: `scan` writes JSON, with optional markdown output via `-r/--human-readable`.
-- **Runner strategy**: Base linter execution prefers `uv run`, then falls back to `python -m`.
+| Question | Section in AGENTS.md |
+| --- | --- |
+| What is in and out of scope for this repo? | intro (**Scope**) |
+| How do I install deps, test, lint, type-check, self-scan? | Commands |
+| Where does each module live and what owns what? | Architecture |
+| Exit codes, stdout vs stderr, linter resolution, config rules | Non-obvious behavior |
+| Commit style, docs-in-step rule, typing bar, test policy | Conventions |
+| What do README, CHANGELOG, and pyproject.toml each cover? | Documentation |
 
-## Potential Pitfalls
-- **Python 3.12+ required** — check `pyproject.toml` before changing syntax.
-- **Radon is a linter too** — it's in `linters/` alongside static analysis tools; include it when iterating all linters.
-- **Config discovery is layered** — local config files are preferred; bundled defaults in `linters/configs/` are used when local config is absent.
-- **Async tests** should use `@pytest.mark.asyncio` when testing async logic directly.
-- **Do not reintroduce removed features** — no `fix` command or AI/provider settings should be added unless explicitly requested.
+## Working agreement
 
-## Documentation
-- See [README.md](../README.md) for usage, CLI examples, and supported linters.
-- See [pyproject.toml](../pyproject.toml) for lint/type/test tool settings.
-- See [CHANGELOG.md](../CHANGELOG.md) for notable behavior changes.
+- **Don't duplicate guidance into this file.** Add it to AGENTS.md and,
+  if it needs signposting, add a row to the table above.

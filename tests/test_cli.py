@@ -13,11 +13,8 @@ from sanopy.linters.result import LinterResult
 
 
 @pytest.fixture(autouse=True)
-def _mock_scan_config(mocker):
-    """Fixture to mock scan config loading with defaults."""
-    return mocker.patch(
-        "sanopy.cli.scan_handler.Config.load", return_value=Config()
-    )
+def _use_mock_scan_config(mock_scan_config):
+    """Apply the shared scan-config mocks to every test in this module."""
 
 
 def _assert_stdout_finding(finding: dict[str, object], test_file) -> None:
