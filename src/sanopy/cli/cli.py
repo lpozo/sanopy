@@ -26,11 +26,23 @@ def main() -> None:
 @click.option(
     "--skip", help="Comma-separated list of linters to skip by default"
 )
-def init(
-    only: str | None = None, skip: str | None = None
-) -> None:  # vulture: ignore
-    """Initialize linter defaults for Sanopy."""
-    handle_init(only=only, skip=skip)
+@click.option(
+    "--no-install",
+    is_flag=True,
+    default=False,
+    help="Write the config only; never install missing linter packages.",
+)
+def init(  # vulture: ignore
+    only: str | None = None,
+    skip: str | None = None,
+    no_install: bool = False,
+) -> None:
+    """Initialize linter defaults for Sanopy.
+
+    Offers to install any selected linter that is not yet available.
+    Exits 2 if an installation fails.
+    """
+    handle_init(only=only, skip=skip, no_install=no_install)
 
 
 @main.command()
