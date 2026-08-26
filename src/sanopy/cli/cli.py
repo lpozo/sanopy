@@ -7,10 +7,11 @@ from typing import Any, Literal, cast
 
 import click
 from click.exceptions import Exit
+from rich.markup import escape
 
 from sanopy.cli.init_handler import handle_init
-from sanopy.cli.scan_handler import handle_scan
-from sanopy.cli.ui import console
+from sanopy.cli.scan_handler import handle_scan, preflight
+from sanopy.cli.ui import console, err_console
 
 
 @click.group()
@@ -77,6 +78,13 @@ def scan(  # vulture: ignore
     """Scan one or more target files or directories.
 
     TARGETS: Files or directories to analyze.
+
+    Requires a .sanopy.toml in the current directory; run 'sanopy init'
+    first. Findings go to stdout as JSON, diagnostics to stderr.
+
+    Exit codes: 0 no findings, 1 findings reported, 2 could not run
+    (missing or invalid config, a linter is not installed, or the
+    filters select no linters).
     """
 
     selected_output_mode = cast(
@@ -88,13 +96,17 @@ def scan(  # vulture: ignore
         name = target.stem if target.is_file() else target.name
         return base.parent / f"{base.stem}-{name}{suffix}"
 
+    # Validate config and linter availability once for the whole run, so a
+    # multi-target scan reports a problem once instead of once per target.
+    config, active_linters = preflight(only, skip)
+
     async def run_all_scans() -> list[tuple[int, str | None]]:
         return await asyncio.gather(
             *[
                 handle_scan(
                     target,
-                    only,
-                    skip,
+                    config,
+                    active_linters,
                     make_output_path(output, target, ".json")
                     if output
                     else None,
@@ -108,6 +120,9 @@ def scan(  # vulture: ignore
     try:
         scan_outputs = asyncio.run(run_all_scans())
     except Exception as err:  # pylint: disable=broad-exception-caught
+        # Report the cause on stderr; exiting 2 silently makes scan
+        # failures indistinguishable from a clean run in automation.
+        err_console.print(f"[red]Scan failed:[/red] {escape(str(err))}")
         raise Exit(2) from err
 
     _write_stdout_payloads([doc for _, doc in scan_outputs if doc is not None])
