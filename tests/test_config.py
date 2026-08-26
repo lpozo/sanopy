@@ -89,43 +89,39 @@ def test_config_save_writes_sections(tmp_path) -> None:
     assert "ignore_cves = ['CVE-1']" in content
 
 
-def test_config_load_creates_defaults(tmp_path) -> None:
-    """Test loading a non-existent config creates the file with defaults."""
+def test_config_load_raises_when_file_missing(tmp_path) -> None:
+    """Test loading a non-existent config raises FileNotFoundError."""
     config_file = tmp_path / "non_existent.toml"
-    config = Config.load(config_file)
 
-    assert config_file.exists()
-    assert not config.only_linters
-    assert not config.skip_linters
-    assert config.ignored_cves == DEFAULT_IGNORED_CVES
-    assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
-    assert config.linter_configs == DEFAULT_LINTER_CONFIGS
+    with pytest.raises(FileNotFoundError, match="sanopy init"):
+        Config.load(config_file)
+
+    assert not config_file.exists()
 
 
 @pytest.mark.parametrize(
     "content",
     [
-        "not valid toml [[[",
-        "[linters\nonly_linters = ",
+        pytest.param("not valid toml [[[", id="garbage"),
+        pytest.param("[linters\nonly_linters = ", id="unterminated-table"),
+        pytest.param("only_linters = [", id="unterminated-list"),
+        pytest.param("key = ", id="missing-value"),
+        pytest.param('a = "unterminated', id="unterminated-string"),
+        pytest.param("[a]\nx = 1\n[a]\nx = 2", id="duplicate-table"),
+        pytest.param("x = 1\nx = 2", id="duplicate-key"),
+        pytest.param("\x00\x01binary", id="binary-junk"),
     ],
 )
-def test_config_invalid_file_resets_to_defaults(
-    tmp_path, content: str
-) -> None:
-    """Test that a corrupt config file is reset to defaults."""
+def test_config_load_raises_on_invalid_toml(tmp_path, content: str) -> None:
+    """Test that an invalid config file raises ValueError."""
     config_file = tmp_path / "bad.toml"
     config_file.write_text(content, encoding="utf-8")
 
-    config = Config.load(config_file)
+    with pytest.raises(ValueError, match="sanopy init"):
+        Config.load(config_file)
 
-    assert not config.only_linters
-    assert not config.skip_linters
-    assert config.ignored_cves == DEFAULT_IGNORED_CVES
-    assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
-    # The file is overwritten with valid defaults
-    reloaded = Config.load(config_file)
-    assert not reloaded.only_linters
-    assert reloaded.ignored_cves == DEFAULT_IGNORED_CVES
+    # The file is NOT overwritten
+    assert config_file.read_text(encoding="utf-8") == content
 
 
 def test_config_ignores_unknown_linter_keys(tmp_path) -> None:
@@ -296,17 +292,93 @@ def test_config_normalizes_linter_config_values(tmp_path) -> None:
     ]
 
 
-def test_config_materializes_defaults_when_missing(tmp_path) -> None:
-    """Test that a missing config file is created with all default sections."""
-    config_file = tmp_path / "non_existent.toml"
-    config = Config.load(config_file)
+@pytest.mark.parametrize(
+    "content, expected",
+    [
+        pytest.param("[linters]\n", True, id="valid-file"),
+        pytest.param("", True, id="empty-file"),
+        pytest.param("not valid toml [[[", True, id="invalid-file-still-is"),
+        pytest.param(None, False, id="absent"),
+    ],
+)
+def test_config_exists(tmp_path, content: str | None, expected: bool) -> None:
+    """exists() is a pure presence check; it never parses the file."""
+    config_file = tmp_path / ".sanopy.toml"
+    if content is not None:
+        config_file.write_text(content, encoding="utf-8")
+
+    assert Config.exists(config_file) is expected
+
+
+def test_config_exists_reports_false_for_a_directory(tmp_path) -> None:
+    """A directory named .sanopy.toml is not a usable config file."""
+    (tmp_path / ".sanopy.toml").mkdir()
+
+    # Path.exists() is true for directories, so this documents the gap:
+    # load() is what rejects it, with a ValueError.
+    assert Config.exists(tmp_path / ".sanopy.toml") is True
+    with pytest.raises(ValueError, match="sanopy init"):
+        Config.load(tmp_path / ".sanopy.toml")
+
+
+def test_config_exists_uses_default_path(monkeypatch, tmp_path) -> None:
+    """Config.exists() without a path checks .sanopy.toml in cwd."""
+    monkeypatch.chdir(tmp_path)
+    assert Config.exists() is False
+
+    (tmp_path / ".sanopy.toml").write_text("[linters]\n", encoding="utf-8")
+    assert Config.exists() is True
+
+
+def test_config_defaults_materializes_every_section(tmp_path) -> None:
+    """Config.defaults() fills in all sections so save() writes them out."""
+    config = Config.defaults()
 
     assert config.ignored_cves == DEFAULT_IGNORED_CVES
     assert config.ignore_vulns == DEFAULT_IGNORED_VULNS
     assert config.linter_configs == DEFAULT_LINTER_CONFIGS
+
+    config_file = tmp_path / ".sanopy.toml"
+    config.save(config_file)
 
     content = config_file.read_text(encoding="utf-8")
     assert "[safety]" in content
     assert "[pip-audit]" in content
     for name in ("pylint", "bandit", "ruff"):
         assert f"[linters.{name}]" in content
+
+
+def test_config_defaults_does_not_share_mutable_state() -> None:
+    """Each defaults() call must be independently mutable."""
+    first = Config.defaults()
+    second = Config.defaults()
+
+    assert first.ignored_cves is not None
+    first.ignored_cves.append("CVE-9999-1")
+
+    assert second.ignored_cves == DEFAULT_IGNORED_CVES
+    assert "CVE-9999-1" not in DEFAULT_IGNORED_CVES
+
+
+def test_config_defaults_round_trips_through_save_and_load(tmp_path) -> None:
+    """What defaults() writes must read back identically.
+
+    `init` writes this file and `scan` reads it, so a lossy round trip
+    would silently change which linters run.
+    """
+    config_file = tmp_path / ".sanopy.toml"
+    Config.defaults().save(config_file)
+
+    reloaded = Config.load(config_file)
+
+    assert reloaded == Config.defaults()
+
+
+def test_default_suppressions_stay_minimal() -> None:
+    """Shipped defaults are seeded into user configs, so keep them minimal.
+
+    Suppressions specific to Sanopy's own environment belong in Sanopy's
+    own .sanopy.toml, which replaces these defaults rather than extending
+    them. Guard against them creeping back into the shipped defaults.
+    """
+    assert DEFAULT_IGNORED_CVES == ["CVE-2026-0994"]
