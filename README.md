@@ -17,34 +17,58 @@ Sanopy is a CLI tool for improving Python code quality. It runs multiple linters
 ## Requirements
 
 - Python 3.12+
-- [uv](https://github.com/astral-sh/uv)
+- [uv](https://github.com/astral-sh/uv) — optional. Sanopy uses it to
+  install linters when present, and falls back to `pip` otherwise.
 
 ## Installation
 
 ```bash
+# Core only (click + rich); linters installed later by `sanopy init`
 pip install sanopy
+
+# Or pull in every linter up front
+pip install 'sanopy[all]'
+
+# Or pick just the ones you want
+pip install 'sanopy[ruff,mypy]'
 
 # Optional with uv
 uv venv .venv
-uv pip install sanopy
+uv pip install 'sanopy[all]'
 ```
+
+Each linter is an optional extra, so the base install stays small. Extra
+names match the linter names: `ruff`, `pylint`, `bandit`, `mypy`,
+`pyright`, `semgrep`, `vulture`, `radon`, `safety`, `pip-audit`, plus
+`all`.
 
 ## Quick Start
 
-### 1. Configure
+### 1. Initialize
 
-Sanopy always uses a local `.sanopy.toml` in the current project.
-
-- If `.sanopy.toml` does not exist, Sanopy creates it automatically with defaults.
-- Use `init` to customize settings manually or in automation.
+Sanopy requires a `.sanopy.toml` configuration file in your project.
+Run `init` to create it and install the linters you need:
 
 ```bash
-# Interactive (manual)
+# Interactive (manual) — prompts before installing anything
 sanopy init
 
-# Non-interactive (CI/automation)
+# Non-interactive (CI/automation) — installs missing linters directly
 sanopy init --only ruff,mypy --skip bandit
+
+# Write the config only, never touch the environment
+sanopy init --only ruff,mypy --no-install
 ```
+
+`init` installs any selected linter that is not already available, into
+the same environment Sanopy runs from. The interactive flow asks first;
+the non-interactive flow just does it, so pass `--no-install` if your
+pipeline manages dependencies itself. `init` exits `2` if an install
+fails, so a following `scan` will not run against a half-built
+environment.
+
+If you run `sanopy scan` before initializing, Sanopy will tell you to
+run `sanopy init` first and exit `2`.
 
 ### 2. Scan a Codebase
 
@@ -98,6 +122,26 @@ Save results to a custom file:
 sanopy scan src/ -o my-scan.json
 ```
 
+## Exit Codes
+
+`sanopy scan` distinguishes "clean" from "could not check", so a failed
+run never looks like a passing one:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | Scan completed, no findings |
+| `1` | Scan completed, findings reported |
+| `2` | Scan could not run, or crashed |
+
+Exit `2` covers a missing or unreadable `.sanopy.toml`, a selected linter
+that is not installed, filters that select no linters at all, and an
+unexpected error during the scan. Every case prints its reason to
+**stderr**, so stdout stays a valid JSON document.
+
+`sanopy init` exits `0` on success and `2` if a linter installation
+fails, so `sanopy init && sanopy scan src/` will not scan against a
+half-built environment.
+
 ## Linter Filtering
 
 Run only selected linters:
@@ -112,23 +156,65 @@ Skip selected linters:
 sanopy scan . --skip safety
 ```
 
+Names are case-insensitive and surrounding whitespace is ignored, so
+`--only " Ruff , MyPy "` works.
+
 You can also set default `only_linters` and `skip_linters` values in
 `.sanopy.toml` via `sanopy init`.
 
+**Precedence.** Each CLI flag replaces its own counterpart in
+`.sanopy.toml`, but not the other one. Given `skip_linters = ["ruff"]` in
+the config, `--only ruff,mypy` runs only `mypy`: the CLI `--only`
+replaced `only_linters`, while the config's `skip_linters` still applies.
+Pass `--skip` explicitly to override it. `--only` is applied before
+`--skip`, so a linter named in both is skipped.
+
+**Selecting nothing is an error.** If the filters leave no linters to
+run, Sanopy exits `2` instead of reporting a clean scan, and names any
+unrecognised linter:
+
+```console
+$ sanopy scan src/ --only rufff
+No linters selected.
+Unknown linter name(s): rufff
+Available: bandit, mypy, pip-audit, pylint, pyright, radon, ruff, safety, semgrep, vulture
+```
+
+## How Sanopy Finds Linters
+
+Linters run as subprocesses, never as imports. For each one, Sanopy tries
+in order:
+
+1. The console script on `PATH` (e.g. `ruff`).
+2. The console script next to the running Python interpreter — this
+   reaches Sanopy's own environment even when its `bin/` directory is not
+   on `PATH`, as with a non-activated virtualenv, `pipx`, or `uv tool`.
+3. `python -m <module>` in that same interpreter, for linters that
+   support it.
+
+A linter is reported as missing only when all three fail, and `scan`
+then exits `2` rather than silently skipping it.
+
 ## Supported Linters
 
-| Linter | Category | Detects |
-| --- | --- | --- |
-| [Ruff](https://github.com/astral-sh/ruff) | Style | PEP 8, imports, code smells |
-| [Pylint](https://github.com/pylint-dev/pylint) | Style | Code quality, conventions |
-| [Bandit](https://github.com/PyCQA/bandit) | Security | Common security vulnerabilities |
-| [MyPy](https://github.com/python/mypy) | Typing | Static type checking |
-| [Pyright](https://github.com/microsoft/pyright) | Typing | Advanced type inference |
-| [Semgrep](https://github.com/semgrep/semgrep) | Semantic | Pattern-based analysis |
-| [Vulture](https://github.com/jendrikseipp/vulture) | Dead code | Unused variables, functions |
-| [Radon](https://github.com/rubik/radon) | Complexity | Cyclomatic complexity |
-| [Safety](https://github.com/pyupio/safety) | Dependencies | Known vulnerabilities |
-| [pip-audit](https://github.com/pypa/pip-audit) | Dependencies | Known vulnerabilities in dependency tree |
+The `Name` column is what you pass to `--only`/`--skip`; the `Extra`
+column is what you pass to `pip install 'sanopy[...]'`.
+
+| Linter | Name | Extra | Category | Detects |
+| --- | --- | --- | --- | --- |
+| [Ruff](https://github.com/astral-sh/ruff) | `ruff` | `ruff` | Style | PEP 8, imports, code smells |
+| [Pylint](https://github.com/pylint-dev/pylint) | `pylint` | `pylint` | Style | Code quality, conventions |
+| [Bandit](https://github.com/PyCQA/bandit) | `bandit` | `bandit` | Security | Common security vulnerabilities |
+| [MyPy](https://github.com/python/mypy) | `mypy` | `mypy` | Typing | Static type checking |
+| [Pyright](https://github.com/microsoft/pyright) | `pyright` | `pyright` | Typing | Advanced type inference |
+| [Semgrep](https://github.com/semgrep/semgrep) | `semgrep` | `semgrep` | Semantic | Pattern-based analysis |
+| [Vulture](https://github.com/jendrikseipp/vulture) | `vulture` | `vulture` | Dead code | Unused variables, functions |
+| [Radon](https://github.com/rubik/radon) | `radon` | `radon` | Complexity | Cyclomatic complexity |
+| [Safety](https://github.com/pyupio/safety) | `safety` | `safety` | Dependencies | Known vulnerabilities |
+| [pip-audit](https://github.com/pypa/pip-audit) | `pip-audit` | `pip-audit` | Dependencies | Known vulnerabilities in dependency tree |
+
+Semgrep is the one linter that cannot be run as `python -m semgrep`, so
+it must be reachable as a console script (step 1 or 2 above).
 
 ## Configuration File
 
@@ -136,7 +222,9 @@ The `.sanopy.toml` file controls linter defaults for the current project.
 
 - Manual workflow: run `sanopy init` and answer prompts.
 - CI/AI workflow: run `sanopy init --only ... --skip ...` in scripts.
-- If the file is missing, Sanopy creates `.sanopy.toml` with defaults.
+- The file is required — `sanopy scan` exits `2` if it is missing.
+- Diagnostics (missing config, missing linters, scan failures) go to
+  stderr, so stdout stays a valid JSON document in machine mode.
 
 ```toml
 [linters]
@@ -167,6 +255,11 @@ set `ignore_cves = []` to disable all suppressions.
 The `[pip-audit]` section lists vulnerability IDs (or aliases) that the
 pip-audit linter should suppress, matched by primary ID or alias.
 
+Both suppression lists **replace** the built-in defaults rather than
+adding to them, so whatever you write is exactly what gets suppressed.
+`sanopy init` seeds the file with the defaults so you can see and edit
+them.
+
 The optional `[linters.<name>]` sections provide the configuration that
 Sanopy passes to linters shipping bundled defaults (`pylint`, `bandit`,
 and `ruff`). A nested `[linters.<name>.test]` table overrides the
@@ -184,18 +277,47 @@ steps:
     run: sanopy scan src/ tests/
 ```
 
+## Troubleshooting
+
+**`No .sanopy.toml found.`** — Run `sanopy init` in the project root.
+`scan` never creates the file for you.
+
+**`Missing linters: ...`** — The named linters are not installed in the
+environment Sanopy runs from. Install them with the suggested command
+(`pip install 'sanopy[ruff,mypy]'`), or re-run `sanopy init`, which
+offers to install whatever is missing.
+
+**`No linters selected.`** — Your `--only`/`--skip` flags, or the
+`only_linters`/`skip_linters` values in `.sanopy.toml`, cancel out or name
+a linter that does not exist. The message lists the valid names.
+
+**Empty or malformed JSON on stdout** — Sanopy writes only the JSON
+document to stdout; everything else goes to stderr. If you are capturing
+output, redirect the two separately: `sanopy scan src/ > out.json`.
+
 ## Development
 
-Clone the repo and install dependencies:
+Clone the repo and install dependencies, including every linter extra:
 
 ```bash
 git clone https://github.com/lpozo/sanopy.git
 cd sanopy
-uv sync
+uv sync --dev --extra all
 ```
 
-Run tests:
+The linters are optional extras, so a plain `uv sync` leaves them out and
+the self-scan below will not run.
+
+Run the checks:
 
 ```bash
-uv run pytest
+uv run pytest                        # test suite
+uv run ruff check .                  # lint
+uv run ruff format --check .         # formatting
+uv run mypy src tests                # type check
+uv run pyright src tests             # type check
+uv run radon cc -n C src tests -s    # complexity
+uv run sanopy scan src tests         # dogfood: must report 0 findings
 ```
+
+See [AGENTS.md](AGENTS.md) for architecture notes and repo conventions.
