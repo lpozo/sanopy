@@ -1952,17 +1952,51 @@ name = "sanopy"
 version = "0.1.0"
 source = { editable = "." }
 dependencies = [
-    { name = "bandit" },
     { name = "click" },
+    { name = "rich" },
+]
+
+[package.optional-dependencies]
+all = [
+    { name = "bandit" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pylint" },
     { name = "pyright" },
     { name = "radon" },
-    { name = "rich" },
     { name = "ruff" },
     { name = "safety" },
     { name = "semgrep" },
+    { name = "vulture" },
+]
+bandit = [
+    { name = "bandit" },
+]
+mypy = [
+    { name = "mypy" },
+]
+pip-audit = [
+    { name = "pip-audit" },
+]
+pylint = [
+    { name = "pylint" },
+]
+pyright = [
+    { name = "pyright" },
+]
+radon = [
+    { name = "radon" },
+]
+ruff = [
+    { name = "ruff" },
+]
+safety = [
+    { name = "safety" },
+]
+semgrep = [
+    { name = "semgrep" },
+]
+vulture = [
     { name = "vulture" },
 ]
 
@@ -1977,19 +2011,21 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "bandit", specifier = ">=1.9.4" },
+    { name = "bandit", marker = "extra == 'bandit'", specifier = ">=1.9.4" },
     { name = "click", specifier = ">=8.3.1" },
-    { name = "mypy", specifier = ">=1.19.1" },
-    { name = "pip-audit", specifier = ">=2.10.1" },
-    { name = "pylint", specifier = ">=4.0.5" },
-    { name = "pyright", specifier = ">=1.1.408" },
-    { name = "radon", specifier = ">=6.0.1" },
+    { name = "mypy", marker = "extra == 'mypy'", specifier = ">=1.19.1" },
+    { name = "pip-audit", marker = "extra == 'pip-audit'", specifier = ">=2.10.1" },
+    { name = "pylint", marker = "extra == 'pylint'", specifier = ">=4.0.5" },
+    { name = "pyright", marker = "extra == 'pyright'", specifier = ">=1.1.408" },
+    { name = "radon", marker = "extra == 'radon'", specifier = ">=6.0.1" },
     { name = "rich", specifier = ">=14.3.3" },
-    { name = "ruff", specifier = ">=0.15.8" },
-    { name = "safety", specifier = ">=3.7.0" },
-    { name = "semgrep", specifier = ">=1.86.0" },
-    { name = "vulture", specifier = ">=2.16" },
+    { name = "ruff", marker = "extra == 'ruff'", specifier = ">=0.15.8" },
+    { name = "safety", marker = "extra == 'safety'", specifier = ">=3.7.0" },
+    { name = "sanopy", extras = ["ruff", "pylint", "bandit", "mypy", "pyright", "semgrep", "vulture", "radon", "safety", "pip-audit"], marker = "extra == 'all'" },
+    { name = "semgrep", marker = "extra == 'semgrep'", specifier = ">=1.86.0" },
+    { name = "vulture", marker = "extra == 'vulture'", specifier = ">=2.16" },
 ]
+provides-extras = ["ruff", "pylint", "bandit", "mypy", "pyright", "semgrep", "vulture", "radon", "safety", "pip-audit", "all"]
 
 [package.metadata.requires-dev]
 dev = [

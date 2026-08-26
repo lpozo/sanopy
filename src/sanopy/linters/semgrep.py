@@ -12,6 +12,10 @@ class SemgrepLinter(BaseLinter):
     """Linter implementation for Semgrep."""
 
     name = "Semgrep"
+    package_name = "semgrep"
+    # Semgrep rejects `python -m semgrep` (deprecated since 1.38.0), so it
+    # is only invocable through its console script.
+    module_name = None
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Semgrep command for the target path.

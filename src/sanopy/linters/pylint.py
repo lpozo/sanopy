@@ -12,6 +12,8 @@ class PylintLinter(BaseLinter):
     """Linter implementation for Pylint."""
 
     name = "Pylint"
+    package_name = "pylint"
+    module_name = "pylint"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Pylint command for the target path.

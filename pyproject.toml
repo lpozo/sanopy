@@ -18,18 +18,23 @@ classifiers = [
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "bandit>=1.9.4",
     "click>=8.3.1",
-    "mypy>=1.19.1",
-    "pip-audit>=2.10.1",
-    "pylint>=4.0.5",
-    "pyright>=1.1.408",
-    "radon>=6.0.1",
     "rich>=14.3.3",
-    "ruff>=0.15.8",
-    "safety>=3.7.0",
-    "semgrep>=1.86.0",
-    "vulture>=2.16",
+]
+
+[project.optional-dependencies]
+ruff = ["ruff>=0.15.8"]
+pylint = ["pylint>=4.0.5"]
+bandit = ["bandit>=1.9.4"]
+mypy = ["mypy>=1.19.1"]
+pyright = ["pyright>=1.1.408"]
+semgrep = ["semgrep>=1.86.0"]
+vulture = ["vulture>=2.16"]
+radon = ["radon>=6.0.1"]
+safety = ["safety>=3.7.0"]
+pip-audit = ["pip-audit>=2.10.1"]
+all = [
+    "sanopy[ruff,pylint,bandit,mypy,pyright,semgrep,vulture,radon,safety,pip-audit]",
 ]
 
 [project.urls]
@@ -82,6 +87,8 @@ ignore_decorators = ["@main.command", "@click.command", "@click.group"]
 ignore_names = [
     "_mock_get_context",
     "_mock_scan_config",
+    "_use_mock_scan_config",
+    "mock_scan_config",
     "BanditLinter",
     "MyPyLinter",
     "PipAuditLinter",
@@ -95,7 +102,11 @@ ignore_names = [
     "build_command",
     "format",
     "from_dict",
+    "module_name",
+    "output",
+    "package_name",
     "parse_output",
+    "succeeded",
     "process_result",
     "scan_project",
     "snippet_start_line",

@@ -28,6 +28,8 @@ class PipAuditLinter(BaseLinter):
     """Linter implementation for pip-audit dependency vulnerability scanner."""
 
     name = "Pip-Audit"
+    package_name = "pip-audit"
+    module_name = "pip_audit"
 
     def __init__(self, ignore_vulns: list[str] | None = None) -> None:
         """Initialize the pip-audit linter.

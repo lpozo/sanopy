@@ -13,6 +13,8 @@ class SafetyLinter(BaseLinter):
     """Linter implementation for Safety (Dependency vulnerability scanner)."""
 
     name = "Safety"
+    package_name = "safety"
+    module_name = "safety"
 
     def __init__(self, ignored_cves: list[str] | None = None) -> None:
         """Initialize the Safety linter.

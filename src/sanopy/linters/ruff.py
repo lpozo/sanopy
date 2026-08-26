@@ -12,6 +12,8 @@ class RuffLinter(BaseLinter):
     """Linter implementation for Ruff."""
 
     name = "Ruff"
+    package_name = "ruff"
+    module_name = "ruff"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Ruff command for the target path.

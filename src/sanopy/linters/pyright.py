@@ -12,6 +12,8 @@ class PyrightLinter(BaseLinter):
     """Linter implementation for Pyright."""
 
     name = "Pyright"
+    package_name = "pyright"
+    module_name = "pyright"
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Pyright command for the target path.
