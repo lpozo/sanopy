@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-08-26
+
 ### Added
 
 - Linter dependencies are now optional extras (`pip install 'sanopy[ruff]'`, `'sanopy[all]'`, etc.) — core install is lightweight, linters are installed on-demand via `sanopy init`.
