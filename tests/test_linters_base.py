@@ -568,6 +568,25 @@ def test_build_command_leads_with_package_name(name: str) -> None:
 
 
 @pytest.mark.parametrize("name", sorted(LINTER_MAP))
+def test_from_config_returns_configured_linter(name: str) -> None:
+    """from_config builds a linter carrying the active config."""
+    config = Config()
+    linter = LINTER_MAP[name].from_config(config)
+
+    assert isinstance(linter, BaseLinter)
+    assert linter.config is config
+
+
+def test_from_config_base_forwards_config_only() -> None:
+    """The generic from_config just passes config to __init__."""
+    config = Config()
+    linter = SampleLinter.from_config(config)
+
+    assert isinstance(linter, SampleLinter)
+    assert linter.config is config
+
+
+@pytest.mark.parametrize("name", sorted(LINTER_MAP))
 def test_registered_linter_resolves_in_this_environment(name: str) -> None:
     """Every linter resolves when its extra is installed (as in CI)."""
     cls = LINTER_MAP[name]

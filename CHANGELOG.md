@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Linter instantiation now goes through a new `from_config` classmethod on `BaseLinter`, replacing the name-based special-casing of Safety and pip-audit in the scan handler. Adding a config-dependent linter no longer requires touching the handler.
+
 ### Fixed
 
 - Safety and pip-audit now forward `config` to `BaseLinter`, so config-dependent logic no longer sees `None` for these two linters.

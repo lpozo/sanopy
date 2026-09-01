@@ -71,6 +71,22 @@ class BaseLinter(abc.ABC):
         self.config = config
 
     @classmethod
+    def from_config(cls, config: Config | None = None) -> BaseLinter:
+        """Instantiate the linter from the active configuration.
+
+        The base implementation passes ``config`` straight through. A
+        subclass that needs config-derived settings beyond the shared
+        ``config`` attribute overrides this to forward them.
+
+        Args:
+            config: The active configuration, or ``None`` for defaults.
+
+        Returns:
+            A configured linter instance.
+        """
+        return cls(config=config)
+
+    @classmethod
     def resolve_command(cls, args: list[str]) -> list[str] | None:
         """Resolve the argv used to invoke this linter, if it is installed.
 

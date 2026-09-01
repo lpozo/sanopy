@@ -39,6 +39,20 @@ class SafetyLinter(BaseLinter):
         )
         super().__init__(config=config)
 
+    @classmethod
+    def from_config(cls, config: Config | None = None) -> SafetyLinter:
+        """Build a Safety linter from the active configuration.
+
+        Args:
+            config: The active configuration; its ``ignored_cves`` are
+                forwarded to the linter.
+
+        Returns:
+            A configured Safety linter instance.
+        """
+        ignored_cves = config.ignored_cves if config else None
+        return cls(config=config, ignored_cves=ignored_cves)
+
     def build_command(self, target: Path) -> list[str]:
         """Build the Safety command.
 

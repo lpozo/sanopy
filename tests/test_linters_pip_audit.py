@@ -210,6 +210,26 @@ def test_pip_audit_forwards_config_to_base() -> None:
     assert linter.config is config
 
 
+def test_pip_audit_from_config_forwards_ignore_vulns() -> None:
+    """Test that from_config forwards the config's ignored vulnerabilities."""
+    from sanopy.config import Config
+
+    config = Config(ignore_vulns=["PYSEC-2026-3482"])
+
+    linter = PipAuditLinter.from_config(config)
+
+    assert linter.ignore_vulns == ["PYSEC-2026-3482"]
+    assert linter.config is config
+
+
+def test_pip_audit_from_config_defaults_when_config_none() -> None:
+    """Test that from_config falls back to defaults without a config."""
+    linter = PipAuditLinter.from_config(None)
+
+    assert linter.ignore_vulns == DEFAULT_IGNORED_VULNS
+    assert linter.config is None
+
+
 @pytest.mark.asyncio
 async def test_pip_audit_ignores_vuln_by_default(mocker, linter) -> None:
     """Test that default ignored vulnerabilities are suppressed."""

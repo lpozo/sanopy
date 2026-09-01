@@ -53,6 +53,20 @@ class PipAuditLinter(BaseLinter):
         )
         super().__init__(config=config)
 
+    @classmethod
+    def from_config(cls, config: Config | None = None) -> PipAuditLinter:
+        """Build a pip-audit linter from the active configuration.
+
+        Args:
+            config: The active configuration; its ``ignore_vulns`` are
+                forwarded to the linter.
+
+        Returns:
+            A configured pip-audit linter instance.
+        """
+        ignore_vulns = config.ignore_vulns if config else None
+        return cls(config=config, ignore_vulns=ignore_vulns)
+
     def build_command(self, target: Path) -> list[str]:
         """Build the pip-audit command.
 
