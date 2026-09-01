@@ -291,6 +291,11 @@ offers to install whatever is missing.
 `only_linters`/`skip_linters` values in `.sanopy.toml`, cancel out or name
 a linter that does not exist. The message lists the valid names.
 
+**A linter is killed after running for 120 seconds** — a linter subprocess
+that hangs (or runs longer than the 120s timeout) is killed so the scan can
+finish, and the failure is reported on stderr. The other linters' results
+are unaffected.
+
 **Empty or malformed JSON on stdout** — Sanopy writes only the JSON
 document to stdout; everything else goes to stderr. If you are capturing
 output, redirect the two separately: `sanopy scan src/ > out.json`.
