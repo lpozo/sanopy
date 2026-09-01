@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -20,20 +21,30 @@ BUNDLED_FILENAME_MAP = {
 def is_test_path(path: Path) -> bool:
     """Determine if a path belongs to test code.
 
+    A path is test code when its filename follows a ``test_*`` /
+    ``*_test.py`` pattern, or when a directory literally named ``tests``
+    sits between the path and the project root (CWD). Matching is done on
+    exact path components so a project merely *living under* a directory
+    named ``tests`` is not misclassified.
+
     Args:
         path: The file or directory path.
 
     Returns:
         True if the path is likely test code, False otherwise.
     """
-    path_str = str(path.absolute())
-    # Common test directory and filename patterns
-    return (
-        "tests/" in path_str
-        or "/tests" in path_str
-        or path.name.startswith("test_")
-        or path.name.endswith("_test.py")
-    )
+    if path.name.startswith("test_") or path.name.endswith("_test.py"):
+        return True
+
+    current = path.absolute()
+    stop_at = Path.cwd().absolute()
+    while True:
+        if current.name == "tests":
+            return True
+        if current in (stop_at, current.parent):
+            break
+        current = current.parent
+    return False
 
 
 def materialize_linter_config(
@@ -145,10 +156,11 @@ def _has_linter_section(path: Path, linter_name: str) -> bool:
         True if a ``[tool.<linter_name>]`` section exists, False otherwise.
     """
     try:
-        content = path.read_text(encoding="utf-8")
-        # Crude check to avoid full TOML parsing dependency if possible,
-        # but reliable enough for [tool.<linter>]
-        section = f"[tool.{linter_name.lower()}]"
-        return section in content
-    except OSError:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
         return False
+    tool = data.get("tool")
+    if not isinstance(tool, dict):
+        return False
+    return linter_name.lower() in tool

@@ -4,9 +4,91 @@
 
 from pathlib import Path
 
+import pytest
+
 from sanopy.config import Config, LinterConfig
-from sanopy.linters.config_discovery import materialize_linter_config
+from sanopy.linters.config_discovery import (
+    find_nearest_local_config,
+    is_test_path,
+    materialize_linter_config,
+)
 from sanopy.linters.ruff import RuffLinter
+
+
+@pytest.mark.parametrize(
+    "rel_path, expected",
+    [
+        pytest.param("app.py", False, id="plain-file"),
+        pytest.param("tests/test_app.py", True, id="file-under-tests-dir"),
+        pytest.param("tests/shared.py", True, id="shared-file-under-tests"),
+        pytest.param("tests/sub/test_x.py", True, id="nested-under-tests"),
+        pytest.param("test_app.py", True, id="test-prefix"),
+        pytest.param("helpers.py", False, id="non-test-module"),
+    ],
+)
+def test_is_test_path_under_project(
+    tmp_path: Path, monkeypatch, rel_path, expected
+) -> None:
+    """is_test_path classifies files relative to the project root (CWD)."""
+    monkeypatch.chdir(tmp_path)
+    project_file = tmp_path / rel_path
+    project_file.parent.mkdir(parents=True, exist_ok=True)
+    project_file.write_text("x = 1\n", encoding="utf-8")
+
+    assert is_test_path(project_file) is expected
+
+
+def test_is_test_path_project_under_tests_dir_is_not_test_code(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A project living under a directory named 'tests' is not test code."""
+    project = tmp_path / "tests" / "project"
+    project.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(project)
+    app = project / "app.py"
+    app.write_text("x = 1\n", encoding="utf-8")
+
+    assert is_test_path(app) is False
+
+
+def _write_pyproject(tmp_path: Path, content: str) -> Path:
+    path = tmp_path / "pyproject.toml"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_pyproject_tool_section_is_detected(tmp_path: Path) -> None:
+    path = _write_pyproject(
+        tmp_path, "[project]\nname = 'x'\n\n[tool.ruff]\nline-length = 79\n"
+    )
+    found = find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff")
+    assert found == path
+
+
+def test_pyproject_section_in_comment_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(
+        tmp_path,
+        "[project]\nname = 'x'\n# [tool.ruff]\n[tool.pylint]\n",
+    )
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
+
+
+def test_pyproject_section_in_string_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(
+        tmp_path, "[project]\ndescription = 'see [tool.ruff] docs'\n"
+    )
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
+
+
+def test_pyproject_without_tool_table_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(tmp_path, "[project]\nname = 'x'\n")
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
 
 
 def test_materialize_pylint_config() -> None:

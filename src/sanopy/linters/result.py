@@ -19,7 +19,7 @@ class LinterResult:
         linter_name: Name of the linter that produced the error.
         error_code: The specific error code from the linter.
         message: The descriptive error message.
-            raw_severity: Original severity if provided by the linter.
+        raw_severity: Original severity if provided by the linter.
         snippet_context: The code surrounding the error for local reporting.
     """
 
@@ -53,23 +53,71 @@ class LinterResult:
     def from_dict(cls, data: dict[str, Any]) -> Self:
         """Reconstruct a LinterResult from a dict (e.g., loaded from JSON).
 
+        Mandatory fields must be present and correctly typed, otherwise a
+        ``KeyError`` (missing) or ``TypeError`` (mis-typed) is raised rather
+        than silently producing a broken result.
+
         Args:
             data: The dictionary containing linter result data.
 
         Returns:
             A new LinterResult instance.
+
+        Raises:
+            KeyError: If a mandatory field is missing.
+            TypeError: If a mandatory field has the wrong type.
         """
+        file_path = data["file_path"]
+        line_start = cls._require_int(data, "line_start")
+        line_end = cls._optional_int(data, "line_end")
+        col_start = cls._optional_int(data, "col_start")
+        col_end = cls._optional_int(data, "col_end")
+        linter_name = cls._require_str(data, "linter_name")
+        error_code = cls._require_str(data, "error_code")
+        message = cls._require_str(data, "message")
+
         return cls(
-            file_path=Path(data["file_path"]),
-            line_start=data["line_start"],
-            line_end=data.get("line_end"),
-            col_start=data.get("col_start"),
-            col_end=data.get("col_end"),
-            linter_name=data["linter_name"],
-            error_code=data["error_code"],
-            message=data["message"],
+            file_path=Path(file_path),
+            line_start=line_start,
+            line_end=line_end,
+            col_start=col_start,
+            col_end=col_end,
+            linter_name=linter_name,
+            error_code=error_code,
+            message=message,
             raw_severity=data.get("raw_severity"),
             snippet_context=data.get("snippet_context", ""),
-            snippet_start_line=data.get("snippet_start_line", 1),
+            snippet_start_line=_as_int(data.get("snippet_start_line", 1)),
             semantic_context=data.get("semantic_context", ""),
         )
+
+    @staticmethod
+    def _require_int(data: dict[str, Any], key: str) -> int:
+        """Return and validate an int field that must be present."""
+        return _require_type(data[key], int, key)
+
+    @staticmethod
+    def _optional_int(data: dict[str, Any], key: str) -> int | None:
+        """Return and validate an optional int field."""
+        if key not in data or data[key] is None:
+            return None
+        return _require_type(data[key], int, key)
+
+    @staticmethod
+    def _require_str(data: dict[str, Any], key: str) -> str:
+        """Return and validate a str field that must be present."""
+        return _require_type(data[key], str, key)
+
+
+def _require_type[T](value: Any, expected: type[T], name: str) -> T:
+    """Return ``value`` if it is an ``expected``, else raise TypeError."""
+    if not isinstance(value, expected):
+        raise TypeError(
+            f"{name} must be {expected.__name__}, got {type(value).__name__}"
+        )
+    return value
+
+
+def _as_int(value: Any) -> int:
+    """Validate that ``value`` is an int, raising TypeError otherwise."""
+    return _require_type(value, int, "snippet_start_line")

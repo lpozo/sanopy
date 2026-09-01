@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-09-01
+
+### Changed
+
+- Linter instantiation now goes through a new `from_config` classmethod on `BaseLinter`, replacing the name-based special-casing of Safety and pip-audit in the scan handler. Adding a config-dependent linter no longer requires touching the handler.
+
+### Fixed
+
+- pip-audit's vulnerability suppression set is now built once per scan instead of once per finding, speeding up scans of projects with many dependencies.
+- Safety and pip-audit now forward `config` to `BaseLinter`, so config-dependent logic no longer sees `None` for these two linters.
+- A linter task that raises now logs the linter name, exception type, and a full traceback to stderr (via the `logging` module) instead of a bare message, making failures debuggable in a multi-linter scan.
+- A linter that exits non-zero but reports no findings is now flagged as a likely failure on stderr, instead of silently producing a spuriously clean scan. Linters that exit non-zero because they *found* issues are unaffected.
+- A linter subprocess that hangs is now killed after a configurable timeout (default 120s) and reported as a `LinterTimeoutError` instead of blocking the scan indefinitely.
+- `pyproject.toml` is now parsed (via `tomllib`) when deciding whether it contains a `[tool.<linter>]` section, instead of a plain-text substring match that could be fooled by comments or string literals.
+- Test-code detection (`is_test_path`) now matches exact path components instead of searching for a `tests/` substring in the absolute path, so a project merely living under a directory named `tests` is no longer misclassified as test code.
+- `LinterResult.from_dict` validates mandatory field types, raising `TypeError` on mis-typed input instead of silently reconstructing a broken result (missing fields still raise `KeyError`).
+
 ## [0.2.1] - 2026-08-26
 
 ### Fixed

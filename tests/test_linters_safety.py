@@ -227,3 +227,31 @@ def test_safety_build_command(tmp_path) -> None:
         "--output",
         "json",
     ]
+
+
+def test_safety_forwards_config_to_base() -> None:
+    """Test that the config is forwarded to the BaseLinter."""
+    config = object()
+    linter = SafetyLinter(config=config)  # type: ignore[arg-type]
+
+    assert linter.config is config
+
+
+def test_safety_from_config_forwards_ignored_cves() -> None:
+    """Test that from_config forwards the config's ignored CVEs."""
+    from sanopy.config import Config
+
+    config = Config(ignored_cves=["CVE-2026-0994"])
+
+    linter = SafetyLinter.from_config(config)
+
+    assert linter.ignored_cves == ["CVE-2026-0994"]
+    assert linter.config is config
+
+
+def test_safety_from_config_defaults_when_config_none() -> None:
+    """Test that from_config falls back to defaults without a config."""
+    linter = SafetyLinter.from_config(None)
+
+    assert linter.ignored_cves == DEFAULT_IGNORED_CVES
+    assert linter.config is None

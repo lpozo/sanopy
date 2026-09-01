@@ -26,9 +26,7 @@ from sanopy.cli.selection import (
 from sanopy.cli.ui import console, err_console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, BaseLinter, Engine
-from sanopy.linters.pip_audit import PipAuditLinter
 from sanopy.linters.result import LinterResult
-from sanopy.linters.safety import SafetyLinter
 
 
 def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
@@ -217,7 +215,7 @@ def _render_scan_output(
 
 
 def _build_linter(name: str, config: Config) -> BaseLinter:
-    """Instantiate a linter, passing config-dependent settings when needed.
+    """Instantiate a linter from the active configuration.
 
     Args:
         name: Lowercase linter name from the active linter list.
@@ -226,12 +224,7 @@ def _build_linter(name: str, config: Config) -> BaseLinter:
     Returns:
         A configured linter instance.
     """
-    linter_cls = LINTER_MAP[name]
-    if name == "safety":
-        return SafetyLinter(ignored_cves=config.ignored_cves)
-    if name == "pip-audit":
-        return PipAuditLinter(ignore_vulns=config.ignore_vulns)
-    return linter_cls(config=config)
+    return LINTER_MAP[name].from_config(config)
 
 
 class ScanReporter:

@@ -1,12 +1,18 @@
 """Safety linter implementation for dependency vulnerability scanning."""
 
+from __future__ import annotations
+
 import json
 import re
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from sanopy.config import DEFAULT_IGNORED_CVES
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.result import LinterResult
+
+if TYPE_CHECKING:
+    from sanopy.config import Config
 
 
 class SafetyLinter(BaseLinter):
@@ -16,17 +22,36 @@ class SafetyLinter(BaseLinter):
     package_name = "safety"
     module_name = "safety"
 
-    def __init__(self, ignored_cves: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        ignored_cves: list[str] | None = None,
+    ) -> None:
         """Initialize the Safety linter.
 
         Args:
+            config: The active configuration.
             ignored_cves: Optional list of CVE IDs to suppress. Defaults to
                 ``DEFAULT_IGNORED_CVES`` when ``None``.
         """
         self.ignored_cves = (
             DEFAULT_IGNORED_CVES if ignored_cves is None else ignored_cves
         )
-        super().__init__()
+        super().__init__(config=config)
+
+    @classmethod
+    def from_config(cls, config: Config | None = None) -> SafetyLinter:
+        """Build a Safety linter from the active configuration.
+
+        Args:
+            config: The active configuration; its ``ignored_cves`` are
+                forwarded to the linter.
+
+        Returns:
+            A configured Safety linter instance.
+        """
+        ignored_cves = config.ignored_cves if config else None
+        return cls(config=config, ignored_cves=ignored_cves)
 
     def build_command(self, target: Path) -> list[str]:
         """Build the Safety command.

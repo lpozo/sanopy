@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import importlib.util
+import logging
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -22,6 +23,8 @@ from sanopy.linters.result import LinterResult
 
 if TYPE_CHECKING:
     from sanopy.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass  # pylint: disable=too-few-public-methods
@@ -45,6 +48,10 @@ class LinterNotAvailableError(RuntimeError):
     """Raised when a linter cannot be resolved in any environment."""
 
 
+class LinterTimeoutError(TimeoutError):
+    """Raised when a linter subprocess exceeds its execution timeout."""
+
+
 class BaseLinter(abc.ABC):
     """Abstract base class for all linters."""
 
@@ -53,19 +60,48 @@ class BaseLinter(abc.ABC):
     #: PyPI distribution name, which is also the console-script name.
     package_name: str
 
+    #: Maximum seconds a linter subprocess may run before being killed.
+    command_timeout: float = 120.0
+
     #: Importable module usable as ``python -m <module_name>``. ``None``
     #: when the package has no runnable module and must be invoked
     #: through its console script (e.g. Semgrep rejects ``python -m``).
     module_name: str | None = None
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        command_timeout: float | None = None,
+    ) -> None:
         """Initialize the linter.
 
         Args:
             config: The active configuration, used to resolve bundled
                 linter settings. Defaults to ``None``.
+            command_timeout: Maximum execution time in seconds before the
+                subprocess is killed. Defaults to ``command_timeout``.
         """
         self.config = config
+        default_timeout = type(self).command_timeout
+        self.command_timeout = (
+            command_timeout if command_timeout is not None else default_timeout
+        )
+
+    @classmethod
+    def from_config(cls, config: Config | None = None) -> BaseLinter:
+        """Instantiate the linter from the active configuration.
+
+        The base implementation passes ``config`` straight through. A
+        subclass that needs config-derived settings beyond the shared
+        ``config`` attribute overrides this to forward them.
+
+        Args:
+            config: The active configuration, or ``None`` for defaults.
+
+        Returns:
+            A configured linter instance.
+        """
+        return cls(config=config)
 
     @classmethod
     def resolve_command(cls, args: list[str]) -> list[str] | None:
@@ -196,7 +232,22 @@ class BaseLinter(abc.ABC):
             )
 
         process_result = await self._run_command(full_cmd, Path.cwd())
-        return self.parse_output(process_result, target)
+        results = self.parse_output(process_result, target)
+
+        # A non-zero exit code is usually the linter signalling that it
+        # found issues — which is normal. But when it exits non-zero and
+        # yields no findings at all, it likely crashed or failed to run;
+        # surface that or the scan would look spuriously clean.
+        if process_result.returncode != 0 and not results:
+            logger.warning(
+                "Linter %s exited with code %s and reported no findings; "
+                "it may have failed. stderr: %s",
+                self.name,
+                process_result.returncode,
+                process_result.stderr.strip(),
+            )
+
+        return results
 
     def _get_effective_config_path(
         self, target: Path, candidate_filenames: list[str]
@@ -250,7 +301,16 @@ class BaseLinter(abc.ABC):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=self.command_timeout
+            )
+        except TimeoutError as exc:
+            process.kill()
+            await process.wait()
+            raise LinterTimeoutError(
+                f"{self.name} exceeded the {self.command_timeout:g}s timeout"
+            ) from exc
 
         return AsyncCompletedProcess(
             stdout=stdout.decode(encoding="utf-8"),

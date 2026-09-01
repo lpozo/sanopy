@@ -1,12 +1,17 @@
 """pip-audit linter implementation for dependency vulnerability scanning."""
 
+from __future__ import annotations
+
 import json
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from sanopy.config import DEFAULT_IGNORED_VULNS
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.result import LinterResult
+
+if TYPE_CHECKING:
+    from sanopy.config import Config
 
 
 def _as_dependencies(data: object) -> list[dict[str, Any]]:
@@ -31,17 +36,37 @@ class PipAuditLinter(BaseLinter):
     package_name = "pip-audit"
     module_name = "pip_audit"
 
-    def __init__(self, ignore_vulns: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        ignore_vulns: list[str] | None = None,
+    ) -> None:
         """Initialize the pip-audit linter.
 
         Args:
+            config: The active configuration.
             ignore_vulns: Optional list of vulnerability IDs or aliases to
                 suppress. Defaults to ``DEFAULT_IGNORED_VULNS`` when ``None``.
         """
         self.ignore_vulns = (
             DEFAULT_IGNORED_VULNS if ignore_vulns is None else ignore_vulns
         )
-        super().__init__()
+        self._ignore_set = set(self.ignore_vulns)
+        super().__init__(config=config)
+
+    @classmethod
+    def from_config(cls, config: Config | None = None) -> PipAuditLinter:
+        """Build a pip-audit linter from the active configuration.
+
+        Args:
+            config: The active configuration; its ``ignore_vulns`` are
+                forwarded to the linter.
+
+        Returns:
+            A configured pip-audit linter instance.
+        """
+        ignore_vulns = config.ignore_vulns if config else None
+        return cls(config=config, ignore_vulns=ignore_vulns)
 
     def build_command(self, target: Path) -> list[str]:
         """Build the pip-audit command.
@@ -136,7 +161,6 @@ class PipAuditLinter(BaseLinter):
         Returns:
             True if the ID or any alias appears in the ignore list.
         """
-        ignore_set = set(self.ignore_vulns)
-        return vuln_id in ignore_set or any(
-            alias in ignore_set for alias in aliases
+        return vuln_id in self._ignore_set or any(
+            alias in self._ignore_set for alias in aliases
         )
