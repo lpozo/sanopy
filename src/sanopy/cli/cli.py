@@ -2,6 +2,8 @@
 
 import asyncio
 import json
+import logging
+import sys
 from pathlib import Path
 from typing import Any, Literal, cast
 
@@ -17,6 +19,11 @@ from sanopy.cli.ui import console, err_console
 @click.group()
 def main() -> None:
     """Linting orchestrator for Python projects."""
+    logging.basicConfig(
+        level=logging.WARNING,
+        format="%(levelname)s %(name)s: %(message)s",
+        stream=sys.stderr,
+    )
 
 
 @main.command()

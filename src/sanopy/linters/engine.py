@@ -1,12 +1,15 @@
 """Engine to orchestrate multiple linters."""
 
 import asyncio
-import sys
+import logging
+import traceback
 from collections.abc import Callable
 from pathlib import Path
 
 from sanopy.linters.base import BaseLinter
 from sanopy.linters.result import LinterResult
+
+logger = logging.getLogger(__name__)
 
 
 class Engine:
@@ -37,18 +40,26 @@ class Engine:
         all_results: list[LinterResult] = []
 
         tasks = [
-            asyncio.create_task(linter.run(target)) for linter in self.linters
+            (linter, asyncio.create_task(linter.run(target)))
+            for linter in self.linters
         ]
 
-        for coro in asyncio.as_completed(tasks):
+        for linter, task in tasks:
             try:
-                results = await coro
+                results = await task
                 all_results.extend(results)
             except Exception as exc:  # pylint: disable=broad-exception-caught
-                # Log the error but keep results from other linters.
-                # Diagnostics go to stderr so they never corrupt the JSON
-                # document machine mode writes to stdout.
-                print(f"Linter task failed: {exc}", file=sys.stderr)
+                # Log the error with the linter's identity and a traceback
+                # so failures are debuggable, but keep results from other
+                # linters. Diagnostics go to a logger (wired to stderr),
+                # never stdout, so they cannot corrupt the JSON document
+                # machine mode writes.
+                logger.error(
+                    "Linter %s failed with %s:\n%s",
+                    linter.name,
+                    type(exc).__name__,
+                    traceback.format_exc(),
+                )
             finally:
                 if progress_callback:
                     progress_callback()

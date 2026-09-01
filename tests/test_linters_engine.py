@@ -160,12 +160,12 @@ async def test_engine_progress_callback(
 )
 @pytest.mark.asyncio
 async def test_engine_reports_failures_without_losing_results(
-    failing_names: list[str], expected_survivors: set[str], capsys
+    failing_names: list[str], expected_survivors: set[str], caplog
 ) -> None:
-    """A failing linter is reported on stderr and does not stop the others.
+    """A failing linter is logged and does not stop the others.
 
-    Diagnostics must not go to stdout, which carries the JSON document in
-    machine mode.
+    Diagnostics are emitted through a logger (wired to stderr in the CLI),
+    never stdout, which carries the JSON document in machine mode.
     """
     linters: list[BaseLinter] = [
         MockLinter(name, error=RuntimeError(f"boom {name}"))
@@ -177,7 +177,7 @@ async def test_engine_reports_failures_without_losing_results(
     results = await Engine(linters=linters).run_all(Path())
 
     assert {r.linter_name for r in results} == expected_survivors
-    captured = capsys.readouterr()
-    assert captured.out == ""
     for name in failing_names:
-        assert f"boom {name}" in captured.err
+        assert any(
+            name in msg and "RuntimeError" in msg for msg in caplog.messages
+        )
