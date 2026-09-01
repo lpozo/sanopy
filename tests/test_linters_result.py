@@ -247,3 +247,34 @@ def test_linter_result_from_dict_missing_mandatory_field(
 
     with pytest.raises(KeyError):
         LinterResult.from_dict(data)
+
+
+@pytest.mark.parametrize(
+    "field, bad_value",
+    [
+        pytest.param("line_start", "1", id="line_start-string"),
+        pytest.param("line_end", "3", id="line_end-string"),
+        pytest.param("col_start", "0", id="col_start-string"),
+        pytest.param("linter_name", 5, id="linter_name-int"),
+        pytest.param("error_code", 5, id="error_code-int"),
+        pytest.param("message", 5, id="message-int"),
+        pytest.param(
+            "snippet_start_line", "2", id="snippet_start_line-string"
+        ),
+    ],
+)
+def test_linter_result_from_dict_wrong_type_raises(
+    field: str, bad_value: object
+) -> None:
+    """Test that a mis-typed field raises TypeError instead of propagating."""
+    data = {
+        "file_path": "test.py",
+        "line_start": 1,
+        "linter_name": "bandit",
+        "error_code": "B101",
+        "message": "Assert used",
+    }
+    data[field] = bad_value
+
+    with pytest.raises(TypeError, match=field):
+        LinterResult.from_dict(data)

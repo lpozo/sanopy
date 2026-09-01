@@ -18,6 +18,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - A linter subprocess that hangs is now killed after a configurable timeout (default 120s) and reported as a `LinterTimeoutError` instead of blocking the scan indefinitely.
 - `pyproject.toml` is now parsed (via `tomllib`) when deciding whether it contains a `[tool.<linter>]` section, instead of a plain-text substring match that could be fooled by comments or string literals.
 - Test-code detection (`is_test_path`) now matches exact path components instead of searching for a `tests/` substring in the absolute path, so a project merely living under a directory named `tests` is no longer misclassified as test code.
+- `LinterResult.from_dict` validates mandatory field types, raising `TypeError` on mis-typed input instead of silently reconstructing a broken result (missing fields still raise `KeyError`).
 
 ## [0.2.1] - 2026-08-26
 
