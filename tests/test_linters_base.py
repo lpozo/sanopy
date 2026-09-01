@@ -328,6 +328,59 @@ async def test_run_replaces_only_the_leading_command_name() -> None:
     assert captured == [[ON_PATH, "--check", "a.py"]]
 
 
+class FindingLinter(SampleLinter):
+    """SampleLinter whose parse_output returns a single finding."""
+
+    def parse_output(
+        self, process_result: AsyncCompletedProcess, target: Path
+    ) -> list[LinterResult]:
+        return [
+            LinterResult(
+                Path("a.py"), 1, None, None, None, self.name, "E1", "msg", ""
+            )
+        ]
+
+
+@pytest.mark.parametrize(
+    "linter_cls, returncode, warn",
+    [
+        # Clean run: exit 0, no findings -> no warning.
+        pytest.param(SampleLinter, 0, False, id="clean"),
+        # Non-zero exit with findings is the normal "issues found" signal.
+        pytest.param(FindingLinter, 1, False, id="issues-found"),
+        # Non-zero exit with NO findings suggests a crash or failure to run.
+        pytest.param(SampleLinter, 1, True, id="crashed"),
+        pytest.param(SampleLinter, 127, True, id="command-not-found"),
+    ],
+)
+@pytest.mark.asyncio
+async def test_run_warns_on_nonzero_exit_without_findings(
+    linter_cls, returncode, warn, caplog
+) -> None:
+    """run() warns when a linter exits non-zero but reports no findings."""
+    linter = linter_cls()
+
+    async def fake_run_command(self, cmd, cwd):  # noqa: ARG001
+        return AsyncCompletedProcess(
+            stdout="", stderr="boom output", returncode=returncode
+        )
+
+    with (
+        patch.object(linter_cls, "resolve_command", return_value=["mock"]),
+        patch.object(linter_cls, "_run_command", fake_run_command),
+    ):
+        await linter.run(Path("a.py"))
+
+    messages = [m for m in caplog.messages if "exited with code" in m]
+    if warn:
+        assert any(
+            f"exited with code {returncode}" in m and "boom output" in m
+            for m in messages
+        )
+    else:
+        assert not messages
+
+
 # ── install ──────────────────────────────────────────────────────────
 
 UV_CMD = [

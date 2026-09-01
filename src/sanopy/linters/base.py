@@ -5,6 +5,7 @@ from __future__ import annotations
 import abc
 import asyncio
 import importlib.util
+import logging
 import shutil
 import subprocess  # nosec B404
 import sys
@@ -22,6 +23,8 @@ from sanopy.linters.result import LinterResult
 
 if TYPE_CHECKING:
     from sanopy.config import Config
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass  # pylint: disable=too-few-public-methods
@@ -196,7 +199,22 @@ class BaseLinter(abc.ABC):
             )
 
         process_result = await self._run_command(full_cmd, Path.cwd())
-        return self.parse_output(process_result, target)
+        results = self.parse_output(process_result, target)
+
+        # A non-zero exit code is usually the linter signalling that it
+        # found issues — which is normal. But when it exits non-zero and
+        # yields no findings at all, it likely crashed or failed to run;
+        # surface that or the scan would look spuriously clean.
+        if process_result.returncode != 0 and not results:
+            logger.warning(
+                "Linter %s exited with code %s and reported no findings; "
+                "it may have failed. stderr: %s",
+                self.name,
+                process_result.returncode,
+                process_result.stderr.strip(),
+            )
+
+        return results
 
     def _get_effective_config_path(
         self, target: Path, candidate_filenames: list[str]
