@@ -19,7 +19,7 @@ class LinterResult:
         linter_name: Name of the linter that produced the error.
         error_code: The specific error code from the linter.
         message: The descriptive error message.
-            raw_severity: Original severity if provided by the linter.
+        raw_severity: Original severity if provided by the linter.
         snippet_context: The code surrounding the error for local reporting.
     """
 
