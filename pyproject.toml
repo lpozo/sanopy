@@ -80,6 +80,16 @@ quote-style = "double"
 disable = [
     "duplicate-code",
     "too-many-locals",
+    # Test-file relaxations. Tests routinely re-bound names (W0621), import
+    # fixtures at module top (C0415), use loose parameter counts (R0913,
+    # R0917), and prefer concise helpers (C0116, W0612, W0613).
+    "C0415",
+    "W0621",
+    "W0612",
+    "W0613",
+    "C0116",
+    "R0913",
+    "R0917",
 ]
 
 [tool.vulture]
