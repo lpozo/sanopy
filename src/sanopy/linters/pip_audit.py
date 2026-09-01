@@ -51,6 +51,7 @@ class PipAuditLinter(BaseLinter):
         self.ignore_vulns = (
             DEFAULT_IGNORED_VULNS if ignore_vulns is None else ignore_vulns
         )
+        self._ignore_set = set(self.ignore_vulns)
         super().__init__(config=config)
 
     @classmethod
@@ -160,7 +161,6 @@ class PipAuditLinter(BaseLinter):
         Returns:
             True if the ID or any alias appears in the ignore list.
         """
-        ignore_set = set(self.ignore_vulns)
-        return vuln_id in ignore_set or any(
-            alias in ignore_set for alias in aliases
+        return vuln_id in self._ignore_set or any(
+            alias in self._ignore_set for alias in aliases
         )
