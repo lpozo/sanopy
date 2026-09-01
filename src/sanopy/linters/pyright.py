@@ -64,8 +64,9 @@ class PyrightLinter(BaseLinter):
             )
 
             error_code = diag.get("rule", "Unknown")
-            severity = diag.get("severity", "error").upper()
-            message = f"[{severity}] {diag.get('message', 'No message')}"
+            severity = diag.get("severity", "error")
+            message_disp = diag.get("message", "No message")
+            message = f"[{severity.upper()}] {message_disp}"
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
@@ -84,6 +85,7 @@ class PyrightLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=severity.lower(),
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

@@ -68,6 +68,7 @@ class MyPyLinter(BaseLinter):
             col_start = int(match.group("col"))
             message = match.group("msg")
             error_code = match.group("code")
+            severity = match.group("severity")
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
@@ -86,6 +87,7 @@ class MyPyLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=severity,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

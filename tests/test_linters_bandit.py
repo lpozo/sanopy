@@ -25,7 +25,8 @@ def linter() -> BanditLinter:
 
 
 @pytest.mark.parametrize(
-    "stdout, expected_count, first_error_code, first_severity",
+    "stdout, expected_count, first_error_code, first_severity, "
+    "first_raw_severity",
     [
         # Success case with one error
         (
@@ -46,13 +47,14 @@ def linter() -> BanditLinter:
             1,
             "B404",
             "[LOW]",
+            "LOW",
         ),
         # Empty results
-        (json.dumps({"results": []}), 0, None, None),
+        (json.dumps({"results": []}), 0, None, None, None),
         # Missing results key
-        (json.dumps({"other": []}), 0, None, None),
+        (json.dumps({"other": []}), 0, None, None, None),
         # Null results
-        (json.dumps({"results": None}), 0, None, None),
+        (json.dumps({"results": None}), 0, None, None, None),
         # Multiple vulnerabilities
         (
             json.dumps(
@@ -74,21 +76,29 @@ def linter() -> BanditLinter:
             2,
             "B001",
             "[HIGH]",
+            "HIGH",
         ),
         # Malformed JSON
-        ("Not JSON", 0, None, None),
+        ("Not JSON", 0, None, None, None),
         # Missing optional fields fall back to defaults
         (
             json.dumps({"results": [{"test_id": "B999", "line_number": 5}]}),
             1,
             "B999",
             "[LOW]",  # Fallback severity
+            "LOW",
         ),
     ],
 )
 @pytest.mark.asyncio
 async def test_bandit_scenarios(
-    mocker, linter, stdout, expected_count, first_error_code, first_severity
+    mocker,
+    linter,
+    stdout,
+    expected_count,
+    first_error_code,
+    first_severity,
+    first_raw_severity,
 ) -> None:
     """Test various Bandit parsing scenarios."""
     mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
@@ -101,6 +111,7 @@ async def test_bandit_scenarios(
         assert results[0].error_code == first_error_code
         if first_severity:
             assert first_severity in results[0].message
+        assert results[0].raw_severity == first_raw_severity
         assert results[0].snippet_context == "snippet"
 
 
@@ -133,6 +144,7 @@ async def test_bandit_parses_fields(mocker, linter) -> None:
     assert result.line_end == 8
     assert result.col_start is None
     assert result.error_code == "B603"
+    assert result.raw_severity == "MEDIUM"
     assert "[MEDIUM]" in result.message
     assert "shell injection" in result.message
 

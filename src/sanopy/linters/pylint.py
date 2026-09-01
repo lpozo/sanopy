@@ -7,6 +7,14 @@ from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
 from sanopy.linters.context import get_linter_context
 from sanopy.linters.result import LinterResult
 
+SEVERITY_BY_PREFIX = {
+    "E": "error",
+    "F": "fatal",
+    "W": "warning",
+    "C": "convention",
+    "R": "refactor",
+}
+
 
 class PylintLinter(BaseLinter):
     """Linter implementation for Pylint."""
@@ -71,6 +79,10 @@ class PylintLinter(BaseLinter):
             )
             message = error.get("message", "Unknown error")
 
+            raw_severity = SEVERITY_BY_PREFIX.get(
+                error_code.upper()[:1]
+            ) or error.get("type")
+
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
                 line_start=line_start,
@@ -88,6 +100,7 @@ class PylintLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=raw_severity,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

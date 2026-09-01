@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Linter findings now carry the linter's native `raw_severity` (Bandit severity, MyPy error/warning/note, Pyright severity, Semgrep severity, Safety severity, Pylint category), and `normalized_severity` maps that into one of `error`/`warning`/`info`. Previously `raw_severity` was always null and every security/type-linter finding was bucketed as `error`, so a Bandit LOW finding was indistinguishable from a HIGH one. `schema_version` stays `1.0.0` — only the values of existing fields changed, not the structure.
+
 ## [0.2.2] - 2026-09-01
 
 ### Changed

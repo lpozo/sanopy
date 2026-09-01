@@ -116,6 +116,7 @@ async def test_semgrep_parses_fields(mocker, linter) -> None:
     assert result.col_start == 4
     assert result.col_end == 8
     assert result.error_code == "python.lang.security.audit.sql-injection"
+    assert result.raw_severity == "warning"
     assert result.message == "[WARNING] Possible SQL injection"
 
 

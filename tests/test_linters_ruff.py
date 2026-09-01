@@ -108,6 +108,7 @@ async def test_ruff_parses_fields(mocker, linter) -> None:
     assert result.col_start == 1
     assert result.col_end == 101
     assert result.error_code == "E501"
+    assert result.raw_severity is None
     assert result.message == "Line too long (101 > 88)"
 
 
