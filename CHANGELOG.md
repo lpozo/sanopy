@@ -15,6 +15,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 - Safety and pip-audit now forward `config` to `BaseLinter`, so config-dependent logic no longer sees `None` for these two linters.
 - A linter task that raises now logs the linter name, exception type, and a full traceback to stderr (via the `logging` module) instead of a bare message, making failures debuggable in a multi-linter scan.
 - A linter that exits non-zero but reports no findings is now flagged as a likely failure on stderr, instead of silently producing a spuriously clean scan. Linters that exit non-zero because they *found* issues are unaffected.
+- A linter subprocess that hangs is now killed after a configurable timeout (default 120s) and reported as a `LinterTimeoutError` instead of blocking the scan indefinitely.
 
 ## [0.2.1] - 2026-08-26
 

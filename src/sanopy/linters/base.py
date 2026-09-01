@@ -48,6 +48,10 @@ class LinterNotAvailableError(RuntimeError):
     """Raised when a linter cannot be resolved in any environment."""
 
 
+class LinterTimeoutError(TimeoutError):
+    """Raised when a linter subprocess exceeds its execution timeout."""
+
+
 class BaseLinter(abc.ABC):
     """Abstract base class for all linters."""
 
@@ -56,19 +60,32 @@ class BaseLinter(abc.ABC):
     #: PyPI distribution name, which is also the console-script name.
     package_name: str
 
+    #: Maximum seconds a linter subprocess may run before being killed.
+    command_timeout: float = 120.0
+
     #: Importable module usable as ``python -m <module_name>``. ``None``
     #: when the package has no runnable module and must be invoked
     #: through its console script (e.g. Semgrep rejects ``python -m``).
     module_name: str | None = None
 
-    def __init__(self, config: Config | None = None) -> None:
+    def __init__(
+        self,
+        config: Config | None = None,
+        command_timeout: float | None = None,
+    ) -> None:
         """Initialize the linter.
 
         Args:
             config: The active configuration, used to resolve bundled
                 linter settings. Defaults to ``None``.
+            command_timeout: Maximum execution time in seconds before the
+                subprocess is killed. Defaults to ``command_timeout``.
         """
         self.config = config
+        default_timeout = type(self).command_timeout
+        self.command_timeout = (
+            command_timeout if command_timeout is not None else default_timeout
+        )
 
     @classmethod
     def from_config(cls, config: Config | None = None) -> BaseLinter:
@@ -284,7 +301,16 @@ class BaseLinter(abc.ABC):
             stderr=asyncio.subprocess.PIPE,
         )
 
-        stdout, stderr = await process.communicate()
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(), timeout=self.command_timeout
+            )
+        except TimeoutError as exc:
+            process.kill()
+            await process.wait()
+            raise LinterTimeoutError(
+                f"{self.name} exceeded the {self.command_timeout:g}s timeout"
+            ) from exc
 
         return AsyncCompletedProcess(
             stdout=stdout.decode(encoding="utf-8"),

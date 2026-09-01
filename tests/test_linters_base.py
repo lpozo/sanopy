@@ -1,6 +1,7 @@
 """Tests for BaseLinter's invocation-resolution and install ladders."""
 
 import importlib.util
+import sys
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -13,6 +14,7 @@ from sanopy.linters.base import (
     AsyncCompletedProcess,
     InstallResult,
     LinterNotAvailableError,
+    LinterTimeoutError,
 )
 from sanopy.linters.result import LinterResult
 
@@ -379,6 +381,26 @@ async def test_run_warns_on_nonzero_exit_without_findings(
         )
     else:
         assert not messages
+
+
+@pytest.mark.asyncio
+async def test_run_times_out() -> None:
+    """run() raises LinterTimeoutError when a linter hangs past its timeout."""
+    linter = SampleLinter(command_timeout=0.2)
+
+    with (
+        patch.object(
+            SampleLinter,
+            "resolve_command",
+            return_value=[
+                sys.executable,
+                "-c",
+                "import time; time.sleep(5)",
+            ],
+        ),
+        pytest.raises(LinterTimeoutError, match="0.2s timeout"),
+    ):
+        await linter.run(Path("a.py"))
 
 
 # ── install ──────────────────────────────────────────────────────────
