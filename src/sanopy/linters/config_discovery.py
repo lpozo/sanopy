@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import tempfile
+import tomllib
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -145,10 +146,11 @@ def _has_linter_section(path: Path, linter_name: str) -> bool:
         True if a ``[tool.<linter_name>]`` section exists, False otherwise.
     """
     try:
-        content = path.read_text(encoding="utf-8")
-        # Crude check to avoid full TOML parsing dependency if possible,
-        # but reliable enough for [tool.<linter>]
-        section = f"[tool.{linter_name.lower()}]"
-        return section in content
-    except OSError:
+        with path.open("rb") as handle:
+            data = tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError):
         return False
+    tool = data.get("tool")
+    if not isinstance(tool, dict):
+        return False
+    return linter_name.lower() in tool

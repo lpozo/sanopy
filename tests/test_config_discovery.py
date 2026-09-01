@@ -5,8 +5,51 @@
 from pathlib import Path
 
 from sanopy.config import Config, LinterConfig
-from sanopy.linters.config_discovery import materialize_linter_config
+from sanopy.linters.config_discovery import (
+    find_nearest_local_config,
+    materialize_linter_config,
+)
 from sanopy.linters.ruff import RuffLinter
+
+
+def _write_pyproject(tmp_path: Path, content: str) -> Path:
+    path = tmp_path / "pyproject.toml"
+    path.write_text(content, encoding="utf-8")
+    return path
+
+
+def test_pyproject_tool_section_is_detected(tmp_path: Path) -> None:
+    path = _write_pyproject(
+        tmp_path, "[project]\nname = 'x'\n\n[tool.ruff]\nline-length = 79\n"
+    )
+    found = find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff")
+    assert found == path
+
+
+def test_pyproject_section_in_comment_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(
+        tmp_path,
+        "[project]\nname = 'x'\n# [tool.ruff]\n[tool.pylint]\n",
+    )
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
+
+
+def test_pyproject_section_in_string_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(
+        tmp_path, "[project]\ndescription = 'see [tool.ruff] docs'\n"
+    )
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
+
+
+def test_pyproject_without_tool_table_is_not_detected(tmp_path: Path) -> None:
+    _write_pyproject(tmp_path, "[project]\nname = 'x'\n")
+    assert (
+        find_nearest_local_config(tmp_path, ["pyproject.toml"], "ruff") is None
+    )
 
 
 def test_materialize_pylint_config() -> None:
