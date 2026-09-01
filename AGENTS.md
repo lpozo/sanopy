@@ -29,6 +29,33 @@ uv sync --dev --extra all
 
 After changing code, run the full set: tests → ruff → mypy → pyright → radon → self-scan. Verify, don't assume — the self-scan is the check most likely to catch a regression the others miss.
 
+## Git Flow
+
+This repo follows Git Flow. The rule that matters above all: **`main` only ever receives release branches, so it always equals the latest released code — all non-release work goes through `develop`.**
+
+Feature branches branch off `develop` and PR into `develop`, never `main`:
+
+```bash
+# Feature work — branch off develop, PR into develop
+git checkout -b feat/<name> develop
+git push -u origin feat/<name>
+gh pr create --base develop
+```
+
+Releases are the only exception. Cut a release branch off `develop`, bump the version there, and PR it into `main`:
+
+```bash
+# Release — branch off develop, bump version, PR into main
+git checkout -b release/vX.Y.Z develop
+# bump version in pyproject.toml, sync uv.lock, move CHANGELOG [Unreleased] entries under [X.Y.Z]
+git push -u origin release/vX.Y.Z
+gh pr create --base main
+```
+
+Because `publish.yml` fires on every PR merged into `main`, anything merged to `main` ships — keep non-release work off it. After each release, merge `main` back into `develop` so the version bump lands there too.
+
+`gh pr create` and the GitHub web UI default to the repository's default branch, so pass `--base` explicitly to point a PR at the right base.
+
 ## Architecture
 
 - `src/sanopy/cli/cli.py` — click entrypoint (`sanopy` / `python -m sanopy`). Two commands: `init`, `scan`. `scan` exits `0` clean, `1` when findings exist, and `2` when it could not run at all: missing or invalid config, a missing linter, filters selecting no linters, or an unexpected error. `init` exits `2` if an install fails.
@@ -65,9 +92,8 @@ After changing code, run the full set: tests → ruff → mypy → pyright → r
 ## Conventions
 
 - Conventional commit messages (`feat:`, `fix:`, `docs:`, `chore:`, often scoped, e.g. `feat(config):`), feature branch per change, PR merged into `develop`.
-- **Git Flow branch model.** `main` only ever receives release branches, so it always equals the latest released code. `develop` is the integration branch: feature branches (e.g. `feat/foo`) branch off it and PR into it. Release branches (`release/vX.Y.Z`) branch off `develop` and PR into `main`. Because `publish.yml` fires on every PR merged into `main`, anything merged to `main` ships — keep non-release work off it. After each release, merge `main` back into `develop` so the version bump lands there too.
 - **Keep docs in step with behavior.** If a change alters the CLI contract (exit codes, output streams, config handling, how linters are located), update this file, `README.md`, and `CHANGELOG.md` in the same change. Skipping this is what let `.github/copilot-instructions.md` drift into describing a linter-invocation strategy that had already been replaced.
-- Releases are **automated** by `.github/workflows/publish.yml`: merging a release PR into `main` builds, publishes to PyPI (Trusted Publishing), then pushes a `v<version>` tag and creates the GitHub Release. The only manual step lives on the release branch: cut `release/vX.Y.Z` from `develop`, bump `version` in `pyproject.toml`, sync `uv.lock`, and move `CHANGELOG.md`'s `[Unreleased]` entries under `[X.Y.Z]`; then PR it into `main`. Never publish by hand — it collides with Trusted Publishing and leaves the release untagged.
+- Releases are **automated** by `.github/workflows/publish.yml`: merging a release PR into `main` builds, publishes to PyPI (Trusted Publishing), then pushes a `v<version>` tag and creates the GitHub Release. The only manual step is cutting the release branch and bumping the version there — see **Git Flow** above. Never publish by hand — it collides with Trusted Publishing and leaves the release untagged.
 - Adding a linter means adding **two** entries to `[project.optional-dependencies]`: its own extra and its name inside the `all` extra. The module auto-registers in `LINTER_MAP` either way, so a missing `all` entry would silently ship an `sanopy[all]` that cannot run the full set (`tests/test_cli_selection.py` enforces both).
 - Python 3.12 (`requires-python = ">=3.12"`); new code should keep 100% coverage of src type-checked under strict mypy.
 - Running linters (ruff, pylint, bandit, mypy, pyright, semgrep, vulture, radon, safety, pip-audit) are **optional extras**, not runtime dependencies — the base install is `click` + `rich` only. They are run as subprocesses, never imported as tools. CI uses `uv sync --dev --extra all`.
