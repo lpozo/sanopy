@@ -114,6 +114,7 @@ async def test_pylint_parses_fields(mocker, linter) -> None:
     assert result.col_start == 4
     assert result.col_end == 9
     assert result.error_code == "R0913"
+    assert result.raw_severity == "refactor"
     assert result.message == "Too many arguments"
 
 

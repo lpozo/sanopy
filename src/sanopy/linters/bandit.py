@@ -89,6 +89,7 @@ class BanditLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=severity,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

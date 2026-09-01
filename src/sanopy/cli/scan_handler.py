@@ -28,6 +28,30 @@ from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, BaseLinter, Engine
 from sanopy.linters.result import LinterResult
 
+_RAW_TO_SEVERITY_BUCKET = {
+    "error": "error",
+    "fatal": "error",
+    "critical": "error",
+    "high": "error",
+    "warning": "warning",
+    "medium": "warning",
+    "info": "info",
+    "note": "info",
+    "low": "info",
+    "hint": "info",
+    "convention": "info",
+    "refactor": "info",
+}
+
+_ERROR_DEFAULT_LINTERS = {
+    "bandit",
+    "pip-audit",
+    "safety",
+    "semgrep",
+    "mypy",
+    "pyright",
+}
+
 
 def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
     """Validate the environment once before any target is scanned.
@@ -314,25 +338,23 @@ class ScanReporter:
         return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
 
     def _normalize_severity(self, result: LinterResult) -> str:
-        """Normalize linter severities into error/warning/info buckets."""
-        if result.raw_severity:
-            raw = str(result.raw_severity).lower()
-            if raw in {"error", "warning", "info"}:
-                return raw
+        """Normalize a linter severity into error/warning/info buckets.
+
+        A recognized ``raw_severity`` wins. Otherwise the bucket is
+        inferred from the linter name (security/type linters default to
+        error) and finally from the error-code prefix.
+        """
+        raw = str(result.raw_severity).lower() if result.raw_severity else ""
+        bucket = _RAW_TO_SEVERITY_BUCKET.get(raw)
+        if bucket is not None:
+            return bucket
 
         linter = result.linter_name.lower()
         code = result.error_code.upper()
 
-        if linter in {
-            "bandit",
-            "pip-audit",
-            "safety",
-            "semgrep",
-            "mypy",
-            "pyright",
-        }:
-            return "error"
-        if code.startswith(("E", "F", "B")):
+        if linter in _ERROR_DEFAULT_LINTERS or code.startswith(
+            ("E", "F", "B")
+        ):
             return "error"
         if code.startswith(("W", "C", "R")):
             return "warning"

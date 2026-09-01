@@ -24,7 +24,7 @@ def linter() -> MyPyLinter:
 
 
 @pytest.mark.parametrize(
-    "stdout, expected_count, first_error_code, first_line",
+    "stdout, expected_count, first_error_code, first_line, first_severity",
     [
         # Standard error matching
         (
@@ -32,6 +32,7 @@ def linter() -> MyPyLinter:
             1,
             "assignment",
             1,
+            "error",
         ),
         # Multiple errors
         (
@@ -40,13 +41,20 @@ def linter() -> MyPyLinter:
             2,
             "err1",
             10,
+            "error",
         ),
         # Warning severity matches
-        ("file.py:3:1: warning: X [warn-code]\n", 1, "warn-code", 3),
+        (
+            "file.py:3:1: warning: X [warn-code]\n",
+            1,
+            "warn-code",
+            3,
+            "warning",
+        ),
         # Note severity matches
-        ("file.py:4:1: note: X [note-code]\n", 1, "note-code", 4),
+        ("file.py:4:1: note: X [note-code]\n", 1, "note-code", 4, "note"),
         # Empty output
-        ("", 0, None, None),
+        ("", 0, None, None, None),
         # Noise and summary lines (unmatched)
         (
             "Success: no issues found\n"
@@ -55,14 +63,27 @@ def linter() -> MyPyLinter:
             1,
             "code",
             1,
+            "error",
         ),
         # Missing error code does not match the regex
-        ("test.py:1:1: error: Something without code\n", 0, None, None),
+        (
+            "test.py:1:1: error: Something without code\n",
+            0,
+            None,
+            None,
+            None,
+        ),
     ],
 )
 @pytest.mark.asyncio
 async def test_mypy_scenarios(
-    mocker, linter, stdout, expected_count, first_error_code, first_line
+    mocker,
+    linter,
+    stdout,
+    expected_count,
+    first_error_code,
+    first_line,
+    first_severity,
 ) -> None:
     """Test various MyPy parsing scenarios."""
     mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=1)
@@ -74,6 +95,7 @@ async def test_mypy_scenarios(
     if expected_count > 0:
         assert results[0].error_code == first_error_code
         assert results[0].line_start == first_line
+        assert results[0].raw_severity == first_severity
         assert results[0].snippet_context == "snippet"
 
 
@@ -97,6 +119,7 @@ async def test_mypy_parses_fields(mocker, linter) -> None:
     assert result.col_start == 7
     assert result.col_end is None
     assert result.error_code == "assignment"
+    assert result.raw_severity == "error"
     assert "Incompatible types" in result.message
 
 

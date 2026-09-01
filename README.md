@@ -92,6 +92,40 @@ envelope:
 }
 ```
 
+Each entry in `findings` carries the finding's `id`, `message`,
+`location`, `context`, and a `linter` object naming the rule plus two
+severity fields:
+
+- `raw_severity` — the linter's own severity string when it reports one
+  (Bandit `LOW`/`MEDIUM`/`HIGH`, MyPy `error`/`warning`/`note`, and so on),
+  otherwise `null`.
+- `normalized_severity` — that raw value bucketed into `error`, `warning`,
+  or `info`. When the linter reports no severity, the bucket is inferred
+  from the linter and its rule id instead.
+
+```json
+{
+  "id": "3f7c1e2b9a4d6f08",
+  "message": "Use of eval detected",
+  "linter": {
+    "name": "Semgrep",
+    "rule_id": "python.lang.security.audit.eval-used",
+    "raw_severity": "WARNING",
+    "normalized_severity": "warning"
+  },
+  "location": {
+    "path": "src/mod.py",
+    "start": {"line": 10, "column": 4},
+    "end": {"line": 10, "column": 20}
+  },
+  "context": {
+    "snippet": "value = eval(user_input)",
+    "snippet_start_line": 10,
+    "semantic": "in def load_config"
+  }
+}
+```
+
 Use human output mode for terminal-friendly progress and summaries:
 
 ```bash

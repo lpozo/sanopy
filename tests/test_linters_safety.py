@@ -129,12 +129,10 @@ async def test_safety_parses_fields(mocker, linter) -> None:
     assert result.line_start == 1
     assert result.line_end is None
     assert result.error_code == "VULN-5"
+    assert result.raw_severity == "high"
     assert result.snippet_context == ""
     assert "flask==2.2.2" in result.message
     assert "CVE-2023-30861" in result.message
-    assert result.message.startswith("[HIGH]") or result.message.startswith(
-        "[high]"
-    )
 
 
 @pytest.mark.asyncio
