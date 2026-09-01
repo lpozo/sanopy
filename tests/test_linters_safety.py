@@ -227,3 +227,11 @@ def test_safety_build_command(tmp_path) -> None:
         "--output",
         "json",
     ]
+
+
+def test_safety_forwards_config_to_base() -> None:
+    """Test that the config is forwarded to the BaseLinter."""
+    config = object()
+    linter = SafetyLinter(config=config)  # type: ignore[arg-type]
+
+    assert linter.config is config

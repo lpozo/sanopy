@@ -202,6 +202,14 @@ def test_pip_audit_build_command(tmp_path) -> None:
     ]
 
 
+def test_pip_audit_forwards_config_to_base() -> None:
+    """Test that the config is forwarded to the BaseLinter."""
+    config = object()
+    linter = PipAuditLinter(config=config)  # type: ignore[arg-type]
+
+    assert linter.config is config
+
+
 @pytest.mark.asyncio
 async def test_pip_audit_ignores_vuln_by_default(mocker, linter) -> None:
     """Test that default ignored vulnerabilities are suppressed."""
