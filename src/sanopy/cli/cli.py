@@ -15,6 +15,11 @@ from sanopy.cli.init_handler import handle_init
 from sanopy.cli.scan_handler import handle_scan, preflight
 from sanopy.cli.ui import console, err_console
 
+# Cap on simultaneous linter subprocesses across all scan targets. A
+# multi-target scan otherwise spawns targets x linters at once (e.g. 30
+# with 3 targets and 10 linters), risking resource exhaustion.
+CONCURRENT_SUBPROCESSES = 10
+
 
 @click.group()
 def main() -> None:
@@ -120,6 +125,9 @@ def scan(  # vulture: ignore
     config, active_linters = preflight(only, skip)
 
     async def run_all_scans() -> list[tuple[int, str | None]]:
+        # Cap concurrent linter subprocesses across all targets so a
+        # multi-target scan cannot spawn unbounded subprocesses at once.
+        semaphore = asyncio.Semaphore(CONCURRENT_SUBPROCESSES)
         return await asyncio.gather(
             *[
                 handle_scan(
@@ -131,6 +139,7 @@ def scan(  # vulture: ignore
                     else None,
                     selected_output_mode,
                     human_readable,
+                    semaphore,
                 )
                 for target in targets
             ]

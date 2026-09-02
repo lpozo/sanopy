@@ -176,7 +176,9 @@ def test_cli_scan_human_mode_drives_progress_callback(
 
     calls: list[int] = []
 
-    async def _run_all_with_progress(target, progress_callback=None):
+    async def _run_all_with_progress(
+        target, progress_callback=None, semaphore=None
+    ):
         if progress_callback:
             progress_callback()
             calls.append(1)
@@ -369,7 +371,7 @@ def test_cli_scan_multiple_targets_merges_per_target_findings(
             message=f"finding {pos}",
         )
 
-    def _distinct_results(target, progress_callback=None):
+    def _distinct_results(target, progress_callback=None, semaphore=None):
         if str(target) == str(first_file):
             return [make_result(1, first_file), make_result(2, first_file)]
         return [make_result(3, second_file)]
