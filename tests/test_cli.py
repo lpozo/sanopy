@@ -166,6 +166,36 @@ def test_cli_scan_human_mode_does_not_print_json_stdout(
     assert '"schema_version"' not in result.output
 
 
+def test_cli_scan_human_mode_drives_progress_callback(
+    mocker, tmp_path
+) -> None:
+    """Human mode calls the run_all progress callback to advance the bar."""
+    runner = CliRunner()
+    test_file = tmp_path / "valid.py"
+    test_file.write_text("def ok():\n    return 1\n", encoding="utf-8")
+
+    calls: list[int] = []
+
+    async def _run_all_with_progress(target, progress_callback=None):
+        if progress_callback:
+            progress_callback()
+            calls.append(1)
+        return []
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        side_effect=_run_all_with_progress,
+    )
+
+    result = runner.invoke(
+        main, ["scan", str(test_file), "--output-mode", "human"]
+    )
+
+    assert result.exit_code == 0
+    assert calls == [1]
+    assert "No issues found" in result.output
+
+
 def test_cli_scan_human_readable_generates_markdown(mocker, tmp_path) -> None:
     """Test that --human-readable generates markdown and JSON output."""
     import json
@@ -310,6 +340,62 @@ def test_cli_scan_multiple_targets_emits_single_json(mocker, tmp_path) -> None:
         )
 
 
+def test_cli_scan_multiple_targets_merges_per_target_findings(
+    mocker, tmp_path
+) -> None:
+    """Multi-target merge sums per-target finding_count and concats findings.
+
+    Each target returns a different number of findings so the merged
+    finding_count is verified as a sum and the findings are concatenated
+    rather than overwritten or counted from the first target only.
+    """
+    import json
+
+    runner = CliRunner()
+    first_file = tmp_path / "first.py"
+    first_file.write_text("x = 1\n", encoding="utf-8")
+    second_file = tmp_path / "second.py"
+    second_file.write_text("y = 2\n", encoding="utf-8")
+
+    def make_result(pos: int, path: Path) -> LinterResult:
+        return LinterResult(
+            file_path=path,
+            line_start=pos + 1,
+            line_end=pos + 1,
+            col_start=1,
+            col_end=2,
+            linter_name="TestLinter",
+            error_code=f"E{pos}",
+            message=f"finding {pos}",
+        )
+
+    def _distinct_results(target, progress_callback=None):
+        if str(target) == str(first_file):
+            return [make_result(1, first_file), make_result(2, first_file)]
+        return [make_result(3, second_file)]
+
+    mocker.patch(
+        "sanopy.cli.scan_handler.Engine.run_all",
+        new_callable=AsyncMock,
+        side_effect=_distinct_results,
+    )
+
+    with runner.isolated_filesystem(temp_dir=tmp_path):
+        result = runner.invoke(
+            main, ["scan", str(first_file), str(second_file)]
+        )
+
+        assert result.exit_code == 1
+        payload = json.loads(result.output)
+        assert payload["run"]["finding_count"] == 3
+        assert [f["message"] for f in payload["findings"]] == [
+            "finding 1",
+            "finding 2",
+            "finding 3",
+        ]
+        assert payload["run"]["active_linters"]  # present in the merged run
+
+
 def test_cli_scan_verbose_option_not_available(tmp_path) -> None:
     """Test that --verbose is not a supported scan option."""
     runner = CliRunner()
@@ -320,6 +406,46 @@ def test_cli_scan_verbose_option_not_available(tmp_path) -> None:
 
     assert result.exit_code != 0
     assert "No such option '--verbose'" in result.output
+
+
+@pytest.mark.parametrize(
+    "command, expected_options",
+    [
+        pytest.param(
+            "scan",
+            ["--only", "--skip", "--output", "--human-readable"],
+            id="scan-help",
+        ),
+        pytest.param(
+            "init",
+            ["--only", "--skip", "--no-install"],
+            id="init-help",
+        ),
+    ],
+)
+def test_cli_command_help(command: str, expected_options: list[str]) -> None:
+    """scan and init expose their options via --help."""
+    runner = CliRunner()
+
+    result = runner.invoke(main, [command, "--help"])
+
+    assert result.exit_code == 0
+    for option in expected_options:
+        assert option in result.output
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["scan", "init"],
+)
+def test_cli_group_help_lists_commands(command: str) -> None:
+    """The top-level help lists both subcommands."""
+    runner = CliRunner()
+
+    result = runner.invoke(main, ["--help"])
+
+    assert result.exit_code == 0
+    assert command in result.output
 
 
 def test_cli_scan_only_filter(mocker, tmp_path) -> None:
@@ -648,22 +774,16 @@ def test_scan_reporter_write_json_report(tmp_path, fake_result) -> None:
 
 
 def test_scan_reporter_write_human_readable_report(
-    tmp_path, fake_result
+    tmp_path, fake_result, monkeypatch
 ) -> None:
     """write_human_readable_report writes a markdown file in the cwd."""
-    import os
-
     from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
     reporter = ScanReporter([fake_result], tmp_path, output, ["testlinter"])
 
-    old_cwd = Path.cwd()
-    try:
-        os.chdir(tmp_path)
-        reporter.write_human_readable_report()
-    finally:
-        os.chdir(old_cwd)
+    monkeypatch.chdir(tmp_path)
+    reporter.write_human_readable_report()
 
     report = reporter.get_human_readable_path()
     assert report.exists()
