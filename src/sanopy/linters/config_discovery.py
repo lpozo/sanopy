@@ -17,6 +17,8 @@ BUNDLED_FILENAME_MAP = {
     "ruff": "ruff.toml",
 }
 
+_materialized_config_dirs: set[Path] = set()
+
 
 def is_test_path(path: Path) -> bool:
     """Determine if a path belongs to test code.
@@ -54,6 +56,10 @@ def materialize_linter_config(
 ) -> Path | None:
     """Render and write a linter's native config from structured settings.
 
+    Each call writes to a fresh, unique temporary directory so concurrent
+    scans can never race on a shared path. The created directory is
+    tracked and can be removed with ``cleanup_materialized_configs``.
+
     Args:
         linter_name: The lowercase linter name (e.g., 'pylint', 'ruff').
         category: The code category ('default' or 'test').
@@ -72,11 +78,38 @@ def materialize_linter_config(
     if content is None:
         return None
 
-    cache_dir = Path(tempfile.gettempdir()) / "sanopy" / "configs" / category
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    path = cache_dir / BUNDLED_FILENAME_MAP[linter_name]
+    config_dir = Path(tempfile.mkdtemp(prefix=f"sanopy-{category}-"))
+    path = config_dir / BUNDLED_FILENAME_MAP[linter_name]
     path.write_text(content, encoding="utf-8")
+    _materialized_config_dirs.add(config_dir)
     return path
+
+
+def cleanup_materialized_configs() -> int:
+    """Remove every temporary directory created during materialization.
+
+    Safe to call repeatedly: directories already removed are ignored.
+
+    Returns:
+        The number of directories removed.
+    """
+    removed = 0
+    while _materialized_config_dirs:
+        config_dir = _materialized_config_dirs.pop()
+        try:
+            config_dir.unlink()
+            removed += 1
+        except FileNotFoundError:
+            pass
+        except OSError:
+            try:
+                for child in config_dir.iterdir():
+                    child.unlink()
+                config_dir.rmdir()
+                removed += 1
+            except OSError:
+                pass
+    return removed
 
 
 def render_native_config(

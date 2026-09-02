@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Fixed
+
+- Bundled native config files (pylint/bandit/ruff) are now materialized into a fresh, unique temporary directory per call instead of a single shared, never-cleaned-up path under `$TMPDIR/sanopy/configs/`. Concurrent scans no longer race on the same file, and the temporary directories are removed once a scan run completes so they no longer accumulate in `$TMPDIR`.
+
 ### Performance
 
 - Each linter now reads the source file once per file and reuses that content for every finding in it, instead of re-reading and AST-parsing the file once per finding. `get_linter_context`, `SourceAnalyzer.find_context_bounds`, and `SnippetProvider.extract` accept an optional `content` argument; the per-finding read (and its fallback path) is skipped when callers supply it.

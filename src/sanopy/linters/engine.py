@@ -7,6 +7,7 @@ from collections.abc import Callable
 from pathlib import Path
 
 from sanopy.linters.base import BaseLinter
+from sanopy.linters.config_discovery import cleanup_materialized_configs
 from sanopy.linters.result import LinterResult
 
 logger = logging.getLogger(__name__)
@@ -63,5 +64,9 @@ class Engine:
             finally:
                 if progress_callback:
                     progress_callback()
+
+        # The temp config files each linter materialized in build_command
+        # were consumed by the subprocesses above; now they can be removed.
+        cleanup_materialized_configs()
 
         return all_results

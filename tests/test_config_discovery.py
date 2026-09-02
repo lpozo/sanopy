@@ -8,6 +8,7 @@ import pytest
 
 from sanopy.config import Config, LinterConfig
 from sanopy.linters.config_discovery import (
+    cleanup_materialized_configs,
     find_nearest_local_config,
     is_test_path,
     materialize_linter_config,
@@ -127,6 +128,58 @@ def test_materialize_ruff_config_renders_valid_toml() -> None:
 
 def test_materialize_unknown_linter_returns_none() -> None:
     assert materialize_linter_config("mypy", "default", LinterConfig()) is None
+
+
+def test_materialized_config_paths_are_unique_per_call() -> None:
+    """Repeated materialization must not race on a shared path.
+
+    Two scans in the same category used to write to the same deterministic
+    path under ``$TMPDIR``, so concurrent scans could clobber each other.
+    Each call must produce a distinct file.
+    """
+    linter_config = LinterConfig(settings={"disable": ["C0415"]})
+    path_a = materialize_linter_config("pylint", "default", linter_config)
+    path_b = materialize_linter_config("pylint", "default", linter_config)
+    try:
+        assert path_a is not None and path_b is not None
+        assert path_a != path_b
+        assert path_a.read_text(encoding="utf-8") == (
+            "[MESSAGES CONTROL]\ndisable=C0415\n"
+        )
+        assert path_b.read_text(encoding="utf-8") == (
+            "[MESSAGES CONTROL]\ndisable=C0415\n"
+        )
+    finally:
+        cleanup_materialized_configs()
+
+
+def test_cleanup_materialized_configs_removes_created_files() -> None:
+    """Cleanup removes every file created by materialize_linter_config."""
+    paths = [
+        materialize_linter_config(
+            "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+        ),
+        materialize_linter_config(
+            "ruff", "default", LinterConfig(settings={"select": ["E"]})
+        ),
+    ]
+    non_null = [p for p in paths if p is not None]
+    assert len(non_null) == len(paths)
+    assert all(p.exists() for p in non_null)
+
+    removed = cleanup_materialized_configs()
+
+    assert removed == len(paths)
+    assert all(not p.exists() for p in non_null)
+
+
+def test_cleanup_materialized_configs_is_idempotent() -> None:
+    """Running cleanup again after an empty registry removes nothing."""
+    materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    cleanup_materialized_configs()
+    assert cleanup_materialized_configs() == 0
 
 
 def test_get_effective_config_prefers_local_config(tmp_path: Path) -> None:
