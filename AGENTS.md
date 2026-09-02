@@ -68,7 +68,7 @@ Because `publish.yml` fires on every PR merged into `main`, anything merged to `
 - `src/sanopy/linters/base.py` — `BaseLinter` (holds `config`; `from_config()` instantiates it from the active config; `resolve_command()` is the single source of truth for how a linter is invoked, `is_available()` is defined in terms of it, `install()` runs pip/uv against `sys.executable`; `command_timeout` — default 120s — kills a hung subprocess, surfacing `LinterTimeoutError`), `AsyncCompletedProcess`, `InstallResult`, `LinterNotAvailableError`.
 - `src/sanopy/linters/engine.py` — runs linters concurrently via asyncio.
 - `src/sanopy/linters/config_discovery.py` — `is_test_path`, `materialize_linter_config`, `cleanup_materialized_configs`, `render_native_config`, `find_nearest_local_config`.
-- `src/sanopy/linters/__init__.py` — **linters are discovered dynamically** (`LINTER_MAP` built by scanning the package). Adding a linter module in this directory auto-registers it; keep the import guarded with `# nosemgrep` as existing modules do.
+- `src/sanopy/linters/__init__.py` — **linters are discovered dynamically** (`LINTER_MAP` built by scanning the package). `sanopy.linters` exports `LINTER_MAP`, `BaseLinter`, `Engine`, and `LinterResult` only; individual linter classes are not re-exported — import them from their own module. Adding a linter module in this directory auto-registers it; keep the import guarded with `# nosemgrep` as existing modules do.
 
 ## Non-obvious behavior
 

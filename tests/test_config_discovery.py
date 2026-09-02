@@ -8,12 +8,28 @@ import pytest
 
 from sanopy.config import Config, LinterConfig
 from sanopy.linters.config_discovery import (
+    _materialized_config_dirs,
     cleanup_materialized_configs,
     find_nearest_local_config,
     is_test_path,
     materialize_linter_config,
+    render_native_config,
 )
 from sanopy.linters.ruff import RuffLinter
+
+
+@pytest.fixture(autouse=True)
+def _isolate_materialized_dirs():
+    """Reset the module-level tracked-dir registry around each test.
+
+    Some tests deliberately leave a dir behind (a failed rmdir) or
+    pre-delete one, so the shared global must be reset to avoid
+    cross-test contamination of the cleanup count.
+    """
+    _materialized_config_dirs.clear()
+    yield
+    cleanup_materialized_configs()
+    _materialized_config_dirs.clear()
 
 
 @pytest.mark.parametrize(
@@ -217,3 +233,136 @@ def test_get_effective_config_uses_defaults_without_config(
     target = tmp_path / "app.py"
     path = linter._get_effective_config_path(target, ["ruff.toml"])
     assert path is not None and path.exists()
+
+
+@pytest.mark.parametrize(
+    "linter_name",
+    ["mypy", "pyright", "semgrep", "vulture", "safety", "pip-audit", ""],
+)
+def test_render_native_config_unknown_linter_returns_none(
+    linter_name: str,
+) -> None:
+    """render_native_config returns None for non-native linters."""
+    assert render_native_config(linter_name, {"disable": ["X"]}) is None
+
+
+@pytest.mark.parametrize(
+    "toml_content",
+    [
+        pytest.param("not: valid: toml [[[", id="invalid-toml"),
+        pytest.param(
+            "[tool.mypy]\nstrict = true\n", id="wrong-linter-section"
+        ),
+    ],
+)
+def test_find_nearest_local_config_ignores_bad_pyproject(
+    tmp_path: Path, toml_content: str
+) -> None:
+    """A pyproject that fails to parse or lacks the section is not returned."""
+    (tmp_path / "pyproject.toml").write_text(toml_content, encoding="utf-8")
+
+    found = find_nearest_local_config(
+        tmp_path / "app.py", ["pyproject.toml"], "ruff"
+    )
+
+    assert found is None
+
+
+def test_cleanup_materialized_configs_ignores_pre_deleted_dir() -> None:
+    """Cleanup tolerates a tracked dir already removed on disk.
+
+    This exercises the FileNotFoundError branch: the dir stays in the
+    registry but is gone, so unlink() raises and cleanup counts nothing.
+    """
+    import shutil
+
+    path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    assert path is not None
+    shutil.rmtree(path.parent)
+
+    assert cleanup_materialized_configs() == 0
+
+
+def test_cleanup_materialized_configs_removes_non_empty_dir() -> None:
+    """Cleanup falls back to removing children when unlink raises OSError.
+
+    A stray file left inside the tracked dir makes unlink() fail (a
+    non-empty directory), so cleanup removes each child and the dir.
+    """
+    path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    assert path is not None
+    stray = path.parent / "stray.tmp"
+    stray.write_text("x", encoding="utf-8")
+
+    assert cleanup_materialized_configs() == 1
+    assert not stray.exists()
+    assert not path.parent.exists()
+
+
+def test_cleanup_materialized_configs_removes_empty_dir() -> None:
+    """Cleanup removes an empty tracked directory.
+
+    With the config file already gone the tracked dir is empty, so the
+    outer unlink() fails (a directory) and the inner fallback's rmdir()
+    succeeds, counting the dir as removed.
+    """
+    path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    assert path is not None
+    path.unlink()
+
+    assert cleanup_materialized_configs() == 1
+    assert not path.parent.exists()
+
+
+def test_cleanup_materialized_configs_swallows_second_oserror(mocker) -> None:
+    """The inner OSError fallback gives up gracefully when rmdir fails too."""
+    path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    assert path is not None
+    stray = path.parent / "stray.tmp"
+    stray.write_text("x", encoding="utf-8")
+
+    # Child unlink succeeds but the final rmdir still fails, so cleanup
+    # must swallow that second OSError and count nothing removed.
+    mocker.patch.object(Path, "rmdir", side_effect=OSError("busy"))
+
+    assert cleanup_materialized_configs() == 0
+    assert not stray.exists()
+
+
+def test_cleanup_materialized_configs_unlink_success_path(mocker) -> None:
+    """Cleanup counts a dir removed when unlink() itself succeeds.
+
+    On POSIX unlink() cannot remove a directory, so this success branch
+    is only reachable by mocking; on platforms where unlink() removes
+    empty directories (e.g. Windows) it is the real path.
+    """
+    materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    mocker.patch.object(Path, "unlink", return_value=None)
+
+    assert cleanup_materialized_configs() == 1
+
+
+def test_materialize_returns_none_when_render_returns_none(mocker) -> None:
+    """materialize propagates a None render as None rather than writing."""
+
+    mocker.patch(
+        "sanopy.linters.config_discovery.render_native_config",
+        return_value=None,
+    )
+
+    assert (
+        materialize_linter_config(
+            "pylint", "default", LinterConfig(settings={"disable": ["X"]})
+        )
+        is None
+    )

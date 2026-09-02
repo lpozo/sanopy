@@ -183,6 +183,22 @@ def test_find_context_bounds_fallback(
     assert expected_fragment in info
 
 
+def test_find_context_bounds_fallback_skips_lines_beyond_file(
+    tmp_path,
+) -> None:
+    """Fallback scans past the last line without index error.
+
+    With a syntax error and a line_start far beyond the file, the fallback
+    must skip indices past the end of the line list before matching.
+    """
+    test_file = _write(tmp_path, "fallback.py", "x = (1\n")
+
+    idx, info = SourceAnalyzer.find_context_bounds(test_file, 50)
+
+    assert idx == 39
+    assert "in module scope" in info
+
+
 @pytest.mark.parametrize(
     "content, expected_names, expected_kinds",
     [

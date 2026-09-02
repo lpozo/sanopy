@@ -174,3 +174,12 @@ def test_serialize_stdout_empty_results_list(tmp_path) -> None:
     assert payload["schema_version"] == "1.0.0"
     assert payload["run"]["finding_count"] == 0
     assert payload["findings"] == []
+
+
+def test_write_json_report_without_output_is_noop(tmp_path) -> None:
+    """write_json_report does nothing when no output path is set."""
+    reporter = ScanReporter([_result()], tmp_path, None, ["Ruff"])
+
+    reporter.write_json_report()
+
+    assert not list(tmp_path.iterdir())
