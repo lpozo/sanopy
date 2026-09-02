@@ -10,6 +10,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `Config.save()` now writes the config file atomically: the TOML content is written to a temporary file in the destination directory and renamed over the target. A crash mid-write no longer leaves a truncated or half-written `.sanopy.toml` behind.
 - `sanopy.linters.SymbolInfo.kind` is now typed as `Literal["class", "function"]` instead of a bare `str`, so static analyzers can catch invalid symbol kinds.
+- When scanning multiple targets, the merged JSON document now sets `run.active_linters` to the union of every target's active linters (in order, deduplicated) instead of taking the first target's list, and `run.finding_count` is the sum across targets.
 - `Config.load()` no longer masks OS-level read failures (permission denied, disk errors, a path pointing at a directory) as a generic `ValueError("Invalid configuration ...")`. These now propagate as their native `OSError`, so callers can distinguish "your file is unreadable" from "your file is invalid TOML". `sanopy scan` reports an unreadable config as an error (exit 2) and `sanopy init` flags it with the overwrite warning.
 - Bundled native config files (pylint/bandit/ruff) are now materialized into a fresh, unique temporary directory per call instead of a single shared, never-cleaned-up path under `$TMPDIR/sanopy/configs/`. Concurrent scans no longer race on the same file, and the temporary directories are removed once a scan run completes so they no longer accumulate in `$TMPDIR`.
 
