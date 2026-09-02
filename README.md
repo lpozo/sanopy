@@ -139,7 +139,9 @@ sanopy scan src/ tests/
 ```
 
 When scanning multiple targets, the results are merged into a single JSON
-document, and `run.target` becomes an array of the scanned paths.
+document, and `run.target` becomes an array of the scanned paths. The merged
+`run.active_linters` is the union of every target's active linters (in order,
+deduplicated), and `run.finding_count` is the sum across targets.
 
 Generate a human-readable Markdown report:
 
