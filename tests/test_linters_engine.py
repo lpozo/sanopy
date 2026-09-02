@@ -1,5 +1,6 @@
 """Tests for the Linter Engine Orchestrator."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
@@ -221,3 +222,57 @@ async def test_engine_cleans_up_materialized_configs() -> None:
     assert linter.config_path is not None
     assert not linter.config_path.exists()
     assert cleanup_materialized_configs() == 0
+
+
+class _ConcurrentLinter(BaseLinter):
+    """A linter that tracks peak concurrent runs via its own ``run``."""
+
+    name = "Concurrent"
+    package_name = "echo"
+    module_name: str | None = None
+
+    def __init__(self, state: dict[str, int], delay: float) -> None:
+        super().__init__()
+        self._state = state
+        self._delay = delay
+
+    def build_command(self, target: Path) -> list[str]:
+        return ["echo", str(target)]
+
+    def parse_output(self, process_result, target: Path) -> list[LinterResult]:
+        return []
+
+    async def run(self, target: Path) -> list[LinterResult]:
+        self._state["active"] += 1
+        self._state["max"] = max(self._state["max"], self._state["active"])
+        await asyncio.sleep(self._delay)
+        self._state["active"] -= 1
+        return []
+
+
+@pytest.mark.asyncio
+async def test_engine_semaphore_caps_concurrency() -> None:
+    """A shared semaphore limits how many linters run at once."""
+    state = {"active": 0, "max": 0}
+    linters: list[BaseLinter] = [
+        _ConcurrentLinter(state, 0.05) for _ in range(6)
+    ]
+    semaphore = asyncio.Semaphore(2)
+
+    await Engine(linters=linters).run_all(Path(), semaphore=semaphore)
+
+    assert state["max"] <= 2
+    assert state["active"] == 0
+
+
+@pytest.mark.asyncio
+async def test_engine_without_semaphore_runs_concurrently() -> None:
+    """Without a semaphore, all linters may run at once."""
+    state = {"active": 0, "max": 0}
+    linters: list[BaseLinter] = [
+        _ConcurrentLinter(state, 0.05) for _ in range(6)
+    ]
+
+    await Engine(linters=linters).run_all(Path())
+
+    assert state["max"] >= 3

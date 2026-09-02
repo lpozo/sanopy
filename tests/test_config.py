@@ -89,6 +89,36 @@ def test_config_save_writes_sections(tmp_path) -> None:
     assert "ignore_cves = ['CVE-1']" in content
 
 
+def test_config_save_is_atomic_and_leaves_no_temp_files(tmp_path) -> None:
+    """save writes atomically and leaves no temp residue behind."""
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("old", encoding="utf-8")
+
+    Config(only_linters=["ruff"]).save(config_file)
+
+    loaded = Config.load(config_file)
+    assert loaded.only_linters == ["ruff"]
+    assert [p.name for p in tmp_path.iterdir()] == ["sanopy.toml"]
+
+
+def test_config_save_cleans_temp_on_failure(tmp_path) -> None:
+    """A failed save removes the temp file and leaves the target intact."""
+    from unittest.mock import patch
+
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("original", encoding="utf-8")
+    config = Config(only_linters=["ruff"])
+
+    with (
+        patch("pathlib.Path.replace", side_effect=OSError("disk full")),
+        pytest.raises(OSError),
+    ):
+        config.save(config_file)
+
+    assert config_file.read_text(encoding="utf-8") == "original"
+    assert [p.name for p in tmp_path.iterdir()] == ["sanopy.toml"]
+
+
 def test_config_load_raises_when_file_missing(tmp_path) -> None:
     """Test loading a non-existent config raises FileNotFoundError."""
     config_file = tmp_path / "non_existent.toml"

@@ -1,5 +1,6 @@
 """Handler for the 'scan' command."""
 
+import asyncio
 import hashlib
 import json
 from collections import Counter
@@ -138,6 +139,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     output: Path | None,
     output_mode: Literal["machine", "human"] = "machine",
     human_readable: bool = False,
+    semaphore: asyncio.Semaphore | None = None,
 ) -> tuple[int, str | None]:
     """Run all active linters on a target path and write results to JSON.
 
@@ -154,6 +156,8 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
             or human-focused progress and summaries.
         human_readable: When ``True``, also writes a markdown report to
             ``linting-report-<target>.md``.
+        semaphore: Optional shared semaphore limiting concurrent linter
+            subprocesses across multiple targets.
 
     Returns:
         A tuple of the number of findings for the target and the serialized
@@ -167,7 +171,9 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     engine = Engine(
         linters=[_build_linter(name, config) for name in active_linters]
     )
-    results = await _run_linters(engine, target, active_linters, output_mode)
+    results = await _run_linters(
+        engine, target, active_linters, output_mode, semaphore
+    )
 
     # Logical Sort: by file then line
     results.sort(key=lambda r: (str(r.file_path), r.line_start))
@@ -187,10 +193,11 @@ async def _run_linters(
     target: Path,
     active_linters: list[str],
     output_mode: Literal["machine", "human"],
+    semaphore: asyncio.Semaphore | None = None,
 ) -> list[LinterResult]:
     """Run linters with optional human-mode progress rendering."""
     if output_mode != "human":
-        return await engine.run_all(target)
+        return await engine.run_all(target, semaphore=semaphore)
 
     with Progress(
         SpinnerColumn(),
@@ -206,7 +213,9 @@ async def _run_linters(
         def progress_cb() -> None:
             progress.update(task_id, advance=1)
 
-        return await engine.run_all(target, progress_callback=progress_cb)
+        return await engine.run_all(
+            target, progress_callback=progress_cb, semaphore=semaphore
+        )
 
 
 def _render_scan_output(

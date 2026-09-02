@@ -27,21 +27,34 @@ class Engine:
         self.linters = linters
 
     async def run_all(
-        self, target: Path, progress_callback: Callable[[], None] | None = None
+        self,
+        target: Path,
+        progress_callback: Callable[[], None] | None = None,
+        semaphore: asyncio.Semaphore | None = None,
     ) -> list[LinterResult]:
         """Run all configured linters on the target in parallel using asyncio.
 
         Args:
             target: The file or directory to scan.
             progress_callback: Optional callable called when a linter finishes.
+            semaphore: Optional shared semaphore to cap total concurrency
+                across targets. When given, a linter acquires it before
+                launching its subprocess, so a multi-target scan cannot
+                spawn unbounded concurrent subprocesses.
 
         Returns:
             A combined list of all linter results.
         """
         all_results: list[LinterResult] = []
 
+        async def run_one(linter: BaseLinter) -> list[LinterResult]:
+            if semaphore is None:
+                return await linter.run(target)
+            async with semaphore:
+                return await linter.run(target)
+
         tasks = [
-            (linter, asyncio.create_task(linter.run(target)))
+            (linter, asyncio.create_task(run_one(linter)))
             for linter in self.linters
         ]
 
