@@ -241,6 +241,8 @@ class Config:
 
         Raises:
             FileNotFoundError: If the configuration file does not exist.
+            OSError: If the file exists but cannot be read (permission
+                or disk errors); the underlying error propagates.
             ValueError: If the file exists but contains invalid TOML.
         """
         config_path = path or DEFAULT_CONFIG_PATH
@@ -273,7 +275,9 @@ class Config:
                 )
                 config._normalize()
                 return config
-        except (OSError, ValueError) as exc:
+        except OSError:  # pylint: disable=try-except-raise
+            raise
+        except ValueError as exc:
             raise ValueError(
                 f"Invalid configuration at {config_path}. "
                 "Run 'sanopy init' to reset it."

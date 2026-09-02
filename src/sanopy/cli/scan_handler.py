@@ -81,7 +81,7 @@ def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
 
     try:
         config = Config.load()
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, OSError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         raise ClickExit(2) from exc
 
