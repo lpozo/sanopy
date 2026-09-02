@@ -120,6 +120,63 @@ async def test_pyright_parses_fields(mocker, linter) -> None:
     assert "[WARNING]" in result.message
 
 
+@pytest.mark.asyncio
+async def test_pyright_reuses_content_per_file(
+    mocker, linter, tmp_path
+) -> None:
+    """Pyright reuses one read of file content across multiple findings."""
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = json.dumps(
+        {
+            "generalDiagnostics": [
+                {
+                    "file": str(mod),
+                    "severity": "error",
+                    "rule": "reportUnknownVariableType",
+                    "message": "msg 1",
+                    "range": {
+                        "start": {"line": 0, "character": 0},
+                        "end": {"line": 0, "character": 1},
+                    },
+                },
+                {
+                    "file": str(mod),
+                    "severity": "error",
+                    "rule": "reportUnknownVariableType",
+                    "message": "msg 2",
+                    "range": {
+                        "start": {"line": 1, "character": 0},
+                        "end": {"line": 1, "character": 1},
+                    },
+                },
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(
+        PyrightLinter, "_run_command", return_value=mock_result
+    )
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.pyright.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
 def test_pyright_build_command(tmp_path) -> None:
     """Test the Pyright command construction."""
     target = tmp_path / "mod.py"

@@ -9,6 +9,7 @@ from sanopy.linters.context import (
     SnippetProvider,
     SourceAnalyzer,
     get_linter_context,
+    read_file_content,
 )
 
 CLASS_FUNC_CONTENT = "class MyClass:\n    def my_func(self):\n        pass\n"
@@ -19,6 +20,18 @@ def _write(tmp_path: Path, name: str, content: str) -> Path:
     path = tmp_path / name
     path.write_text(content, encoding="utf-8")
     return path
+
+
+def test_read_file_content(tmp_path) -> None:
+    """read_file_content returns text or None for unreadable files."""
+    test_file = _write(tmp_path, "test.py", "x = 1\n")
+    assert read_file_content(test_file) == "x = 1\n"
+
+    assert read_file_content(tmp_path / "missing.py") is None
+
+    binary = tmp_path / "binary.py"
+    binary.write_bytes(b"\xff\xfe\xfd")
+    assert read_file_content(binary) is None
 
 
 @pytest.mark.parametrize(
@@ -76,6 +89,17 @@ def test_snippet_provider_format(
     assert SnippetProvider.format(snippet, start_line) == expected
 
 
+def test_snippet_provider_extract_uses_provided_content(tmp_path) -> None:
+    """Extract uses caller-supplied content instead of re-reading the file."""
+    test_file = _write(tmp_path, "test.py", "real content\n")
+
+    snippet = SnippetProvider.extract(
+        test_file, 1, context_lines=0, content="caller content\n"
+    )
+
+    assert snippet == "caller content"
+
+
 @pytest.mark.parametrize(
     "content, line_start, expected_fragment",
     [
@@ -104,6 +128,36 @@ def test_find_context_bounds(
     _, info = SourceAnalyzer.find_context_bounds(test_file, line_start)
 
     assert expected_fragment in info
+
+
+def test_find_context_bounds_uses_provided_content(tmp_path) -> None:
+    """find_context_bounds uses caller-supplied content, not the file."""
+    test_file = _write(
+        tmp_path,
+        "context.py",
+        "def real_func():\n    pass\n",
+    )
+
+    _, info = SourceAnalyzer.find_context_bounds(
+        test_file, 2, content="class CallerClass:\n    pass\n"
+    )
+
+    assert "in class CallerClass" in info
+
+
+def test_find_context_bounds_fallback_uses_provided_content(tmp_path) -> None:
+    """The AST-failure fallback uses caller content instead of re-reading."""
+    test_file = _write(
+        tmp_path,
+        "context.py",
+        "def real_func(\n    pass\n",
+    )
+
+    _, info = SourceAnalyzer.find_context_bounds(
+        test_file, 2, content="def caller_func(\n    pass\n"
+    )
+
+    assert "in def caller_func" in info
 
 
 @pytest.mark.parametrize(
@@ -321,6 +375,25 @@ def test_get_linter_context(
     assert raw
     assert start == expected_start
     assert "module scope" in info
+
+
+def test_get_linter_context_uses_provided_content(tmp_path) -> None:
+    """get_linter_context uses supplied content instead of reading the file."""
+    test_file = _write(
+        tmp_path,
+        "test.py",
+        "def real_func():\n    pass\n",
+    )
+
+    raw, start, info = get_linter_context(
+        test_file,
+        2,
+        context_lines=1,
+        content="class CallerClass:\n    def m(self):\n        pass\n",
+    )
+
+    assert raw == "class CallerClass:\n    def m(self):\n        pass"
+    assert "in def m" in info
 
 
 @pytest.mark.parametrize(

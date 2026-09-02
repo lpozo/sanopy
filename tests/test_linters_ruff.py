@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from sanopy.linters.base import AsyncCompletedProcess
+from sanopy.linters.context import get_linter_context
 from sanopy.linters.ruff import RuffLinter
 
 
@@ -110,6 +111,87 @@ async def test_ruff_parses_fields(mocker, linter) -> None:
     assert result.error_code == "E501"
     assert result.raw_severity is None
     assert result.message == "Line too long (101 > 88)"
+
+
+@pytest.mark.asyncio
+async def test_ruff_reuses_content_per_file(mocker, linter, tmp_path) -> None:
+    """Ruff passes the same content to get_linter_context for one file.
+
+    Multiple findings in the same file must reuse one read of the file
+    content rather than re-reading it once per finding.
+    """
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = json.dumps(
+        [
+            {
+                "code": "E501",
+                "message": "msg1",
+                "filename": str(mod),
+                "location": {"row": 1, "column": 1},
+            },
+            {
+                "code": "E501",
+                "message": "msg2",
+                "filename": str(mod),
+                "location": {"row": 1, "column": 1},
+            },
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(RuffLinter, "_run_command", return_value=mock_result)
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.ruff.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert len(context_calls) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
+@pytest.mark.asyncio
+async def test_ruff_unreadable_finding_file_is_graceful(
+    mocker, linter, tmp_path
+) -> None:
+    """Findings pointing at an unreadable file do not crash parsing."""
+    binary = tmp_path / "target"
+    binary.mkdir()
+    mod = binary / "mod.bin"
+    mod.write_bytes(b"\xff\xfe\xfd")
+
+    stdout = json.dumps(
+        [
+            {
+                "code": "E501",
+                "message": "odd",
+                "filename": str(mod),
+                "location": {"row": 1, "column": 1},
+            }
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(RuffLinter, "_run_command", return_value=mock_result)
+    mocker.patch(
+        "sanopy.linters.ruff.get_linter_context",
+        side_effect=get_linter_context,
+    )
+
+    results = await linter.run(binary)
+
+    assert len(results) == 1
+    assert results[0].snippet_context == ""
 
 
 @pytest.mark.parametrize("config_present", [False, True])

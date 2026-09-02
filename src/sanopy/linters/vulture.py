@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import get_linter_context, read_file_content
 from sanopy.linters.result import LinterResult
 
 
@@ -43,6 +43,7 @@ class VultureLinter(BaseLinter):
         pattern = re.compile(r"^(?P<file>.+?):(?P<line>\d+):\s*(?P<msg>.+)$")
 
         parsed_results = []
+        content_cache: dict[Path, str | None] = {}
         for line in process_result.stdout.splitlines():
             line = line.strip()
             if not line:
@@ -53,6 +54,9 @@ class VultureLinter(BaseLinter):
                 continue
 
             file_path = Path(match.group("file"))
+            if file_path not in content_cache:
+                content_cache[file_path] = read_file_content(file_path)
+
             line_start = int(match.group("line"))
             message = match.group("msg")
 
@@ -61,6 +65,7 @@ class VultureLinter(BaseLinter):
                 line_start=line_start,
                 line_end=line_start,
                 context_lines=10,
+                content=content_cache[file_path],
             )
 
             parsed_results.append(

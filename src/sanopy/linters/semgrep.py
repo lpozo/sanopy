@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import get_linter_context, read_file_content
 from sanopy.linters.result import LinterResult
 
 
@@ -57,8 +57,12 @@ class SemgrepLinter(BaseLinter):
             return []
 
         parsed_results = []
+        content_cache: dict[Path, str | None] = {}
         for finding in findings:
             file_path = Path(finding.get("path", str(target)))
+
+            if file_path not in content_cache:
+                content_cache[file_path] = read_file_content(file_path)
 
             line_start = finding.get("start", {}).get("line", 1)
             col_start = finding.get("start", {}).get("col", 1)
@@ -75,6 +79,7 @@ class SemgrepLinter(BaseLinter):
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=10,
+                content=content_cache[file_path],
             )
 
             parsed_results.append(

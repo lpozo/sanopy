@@ -146,6 +146,57 @@ async def test_semgrep_lowercase_severity_uppercased(mocker, linter) -> None:
     assert results[0].message == "[ERROR] Msg"
 
 
+@pytest.mark.asyncio
+async def test_semgrep_reuses_content_per_file(
+    mocker, linter, tmp_path
+) -> None:
+    """Semgrep reuses one read of file content across multiple findings."""
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = json.dumps(
+        {
+            "results": [
+                {
+                    "path": str(mod),
+                    "start": {"line": 1, "col": 1},
+                    "end": {"line": 1, "col": 2},
+                    "check_id": "rule.id",
+                    "extra": {"severity": "WARNING", "message": "Msg 1"},
+                },
+                {
+                    "path": str(mod),
+                    "start": {"line": 2, "col": 1},
+                    "end": {"line": 2, "col": 2},
+                    "check_id": "rule.id",
+                    "extra": {"severity": "WARNING", "message": "Msg 2"},
+                },
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(
+        SemgrepLinter, "_run_command", return_value=mock_result
+    )
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.semgrep.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
 def test_semgrep_build_command(tmp_path) -> None:
     """Test the Semgrep command construction."""
     target = tmp_path / "mod.py"
