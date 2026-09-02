@@ -180,12 +180,17 @@ def _write_stdout_payloads(stdout_docs: list[str]) -> None:
 def _merge_payloads(payloads: list[dict[str, Any]]) -> dict[str, Any]:
     """Merge per-target scan payloads into a single JSON document."""
     first_run = payloads[0]["run"]
+    active_linters: list[str] = []
+    for payload in payloads:
+        for name in payload["run"]["active_linters"]:
+            if name not in active_linters:
+                active_linters.append(name)
     return {
         "schema_version": payloads[0]["schema_version"],
         "run": {
             "target": [p["run"]["target"] for p in payloads],
             "generated_at": first_run["generated_at"],
-            "active_linters": first_run["active_linters"],
+            "active_linters": active_linters,
             "finding_count": sum(p["run"]["finding_count"] for p in payloads),
         },
         "findings": [
