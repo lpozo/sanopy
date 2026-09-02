@@ -1,4 +1,5 @@
 """Tests for BaseLinter's invocation-resolution and install ladders."""
+# pylint: disable=protected-access  # resolve tests exercise private helpers
 
 import importlib.util
 import sys
@@ -318,6 +319,7 @@ async def test_run_replaces_only_the_leading_command_name() -> None:
     captured: list[list[str]] = []
 
     async def fake_run_command(self, cmd, cwd):  # noqa: ARG001
+        assert isinstance(cwd, Path)
         captured.append(cmd)
         return AsyncCompletedProcess(stdout="", stderr="", returncode=0)
 
@@ -363,6 +365,7 @@ async def test_run_warns_on_nonzero_exit_without_findings(
     linter = linter_cls()
 
     async def fake_run_command(self, cmd, cwd):  # noqa: ARG001
+        assert isinstance(cwd, Path)
         return AsyncCompletedProcess(
             stdout="", stderr="boom output", returncode=returncode
         )
@@ -606,6 +609,17 @@ def test_from_config_base_forwards_config_only() -> None:
 
     assert isinstance(linter, SampleLinter)
     assert linter.config is config
+
+
+def test_get_effective_config_path_without_any_config(tmp_path) -> None:
+    """A linter with no local or bundled config yields a None path."""
+    target = tmp_path / "app.py"
+    target.write_text("x = 1\n", encoding="utf-8")
+
+    assert (
+        SampleLinter()._get_effective_config_path(target, ["sample.toml"])
+        is None
+    )
 
 
 @pytest.mark.parametrize("name", sorted(LINTER_MAP))

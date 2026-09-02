@@ -73,6 +73,15 @@ def linter() -> MyPyLinter:
             None,
             None,
         ),
+        # Blank and whitespace-only lines are skipped before matching
+        (
+            "\n   \n\ttest.py:2:1: error: Indented error [E]\n\n"
+            "test.py:3:1: error: Another [F]\n",
+            2,
+            "E",
+            2,
+            "error",
+        ),
     ],
 )
 @pytest.mark.asyncio
