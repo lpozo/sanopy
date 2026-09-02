@@ -4,7 +4,7 @@ import ast
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 
 @dataclass
@@ -19,7 +19,7 @@ class SymbolInfo:
     """
 
     name: str
-    kind: str  # "class" or "function"
+    kind: Literal["class", "function"]
     line: int
     file_path: Path
 
@@ -188,7 +188,7 @@ class SourceAnalyzer:
                 if isinstance(
                     node, (ast.ClassDef, ast.FunctionDef, ast.AsyncFunctionDef)
                 ) and not node.name.startswith("_"):
-                    kind = (
+                    kind: Literal["class", "function"] = (
                         "class"
                         if isinstance(node, ast.ClassDef)
                         else "function"
