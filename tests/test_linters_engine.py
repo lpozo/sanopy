@@ -4,7 +4,12 @@ from pathlib import Path
 
 import pytest
 
+from sanopy.config import LinterConfig
 from sanopy.linters import BaseLinter, Engine
+from sanopy.linters.config_discovery import (
+    cleanup_materialized_configs,
+    materialize_linter_config,
+)
 from sanopy.linters.result import LinterResult
 
 
@@ -181,3 +186,38 @@ async def test_engine_reports_failures_without_losing_results(
         assert any(
             name in msg and "RuntimeError" in msg for msg in caplog.messages
         )
+
+
+class MaterializingLinter(BaseLinter):
+    """A linter whose build_command materializes a temp config file."""
+
+    name = "Materializing"
+    package_name = "echo"
+    module_name: str | None = None
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.config_path: Path | None = None
+
+    def build_command(self, target: Path) -> list[str]:
+        self.config_path = materialize_linter_config(
+            "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+        )
+        return ["echo", str(target)]
+
+    def parse_output(self, process_result, target: Path) -> list[LinterResult]:
+        return []
+
+
+@pytest.mark.asyncio
+async def test_engine_cleans_up_materialized_configs() -> None:
+    """Config files created during a run are removed when the run ends."""
+    linter = MaterializingLinter()
+    engine = Engine(linters=[linter])
+
+    cleanup_materialized_configs()
+    await engine.run_all(Path())
+
+    assert linter.config_path is not None
+    assert not linter.config_path.exists()
+    assert cleanup_materialized_configs() == 0
