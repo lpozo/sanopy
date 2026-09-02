@@ -59,6 +59,13 @@ PREFLIGHT_FAILURES = [
         id="config-vanished-after-exists-check",
     ),
     pytest.param(
+        [],
+        {"load_error": PermissionError("Permission denied")},
+        ["Permission denied"],
+        [],
+        id="config-unreadable-os-error",
+    ),
+    pytest.param(
         ["--only", "ruff"],
         {"unavailable": ("ruff",)},
         ["Missing linters", "ruff", "pip install 'sanopy[ruff]'"],

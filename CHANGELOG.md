@@ -8,6 +8,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `Config.load()` no longer masks OS-level read failures (permission denied, disk errors, a path pointing at a directory) as a generic `ValueError("Invalid configuration ...")`. These now propagate as their native `OSError`, so callers can distinguish "your file is unreadable" from "your file is invalid TOML". `sanopy scan` reports an unreadable config as an error (exit 2) and `sanopy init` flags it with the overwrite warning.
 - Bundled native config files (pylint/bandit/ruff) are now materialized into a fresh, unique temporary directory per call instead of a single shared, never-cleaned-up path under `$TMPDIR/sanopy/configs/`. Concurrent scans no longer race on the same file, and the temporary directories are removed once a scan run completes so they no longer accumulate in `$TMPDIR`.
 
 ### Performance

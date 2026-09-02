@@ -99,6 +99,28 @@ def test_config_load_raises_when_file_missing(tmp_path) -> None:
     assert not config_file.exists()
 
 
+def test_config_load_propagates_os_error(tmp_path) -> None:
+    """OSError from reading the file is not masked as ValueError.
+
+    Permission errors and disk failures are OS-level issues, not
+    invalid TOML — re-raising them as ValueError("Invalid
+    configuration") hides the real cause from callers.
+    """
+    from unittest.mock import patch
+
+    config_file = tmp_path / ".sanopy.toml"
+    config_file.write_text("[linters]\n", encoding="utf-8")
+
+    with (
+        patch(
+            "sanopy.config.tomllib.load",
+            side_effect=PermissionError("Permission denied"),
+        ),
+        pytest.raises(OSError, match="Permission denied"),
+    ):
+        Config.load(config_file)
+
+
 @pytest.mark.parametrize(
     "content",
     [
@@ -315,9 +337,9 @@ def test_config_exists_reports_false_for_a_directory(tmp_path) -> None:
     (tmp_path / ".sanopy.toml").mkdir()
 
     # Path.exists() is true for directories, so this documents the gap:
-    # load() is what rejects it, with a ValueError.
+    # load() is what rejects it, with an OSError (IsADirectoryError).
     assert Config.exists(tmp_path / ".sanopy.toml") is True
-    with pytest.raises(ValueError, match="sanopy init"):
+    with pytest.raises(OSError):
         Config.load(tmp_path / ".sanopy.toml")
 
 
