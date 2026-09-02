@@ -136,6 +136,36 @@ async def test_mypy_ignores_stderr(mocker, linter) -> None:
     assert results == []
 
 
+@pytest.mark.asyncio
+async def test_mypy_reuses_content_per_file(mocker, linter, tmp_path) -> None:
+    """MyPy reuses one read of file content across multiple findings."""
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = (
+        f"{mod}:1:1: error: Error 1 [err1]\n{mod}:2:1: error: Error 2 [err2]\n"
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=1)
+    mocker.patch.object(MyPyLinter, "_run_command", return_value=mock_result)
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.mypy.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
 def test_mypy_build_command(tmp_path) -> None:
     """Test the MyPy command construction."""
     target = tmp_path / "mod.py"

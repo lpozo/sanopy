@@ -118,6 +118,53 @@ async def test_pylint_parses_fields(mocker, linter) -> None:
     assert result.message == "Too many arguments"
 
 
+@pytest.mark.asyncio
+async def test_pylint_reuses_content_per_file(
+    mocker, linter, tmp_path
+) -> None:
+    """Pylint reuses one read of file content across multiple findings."""
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = json.dumps(
+        [
+            {
+                "line": 1,
+                "column": 1,
+                "path": str(mod),
+                "message": "msg 1",
+                "message-id": "E0001",
+            },
+            {
+                "line": 2,
+                "column": 1,
+                "path": str(mod),
+                "message": "msg 2",
+                "message-id": "E0001",
+            },
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(PylintLinter, "_run_command", return_value=mock_result)
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.pylint.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
 @pytest.mark.parametrize("config_present", [False, True])
 def test_pylint_build_command(mocker, tmp_path, config_present: bool) -> None:
     """Test that the Pylint command includes the rcfile when available."""

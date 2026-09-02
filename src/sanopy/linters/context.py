@@ -24,6 +24,22 @@ class SymbolInfo:
     file_path: Path
 
 
+def read_file_content(file_path: Path) -> str | None:
+    """Read a file's text content, returning None when it is unreadable.
+
+    Args:
+        file_path: Path to the target file.
+
+    Returns:
+        The file's UTF-8 text content, or None if the file is missing,
+        not readable, or not valid UTF-8.
+    """
+    try:
+        return file_path.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return None
+
+
 @dataclass
 class ProjectSummary:
     """Compact summary of a target project.
@@ -49,6 +65,7 @@ class SnippetProvider:
         line_start: int,
         line_end: int | None = None,
         context_lines: int = 5,
+        content: str | None = None,
     ) -> str:
         """Extract a raw snippet of code without line numbers.
 
@@ -57,27 +74,28 @@ class SnippetProvider:
             line_start: 1-indexed starting line number.
             line_end: 1-indexed ending line number (optional).
             context_lines: Number of surrounding lines to include.
+            content: Pre-read file content to avoid re-reading the file.
 
         Returns:
             The raw string content of the snippet.
         """
-        if not file_path.is_file():
-            return ""
+        if content is None:
+            if not file_path.is_file():
+                return ""
+            content = read_file_content(file_path)
+            if content is None:
+                return ""
 
-        try:
-            content = file_path.read_text(encoding="utf-8")
-            lines = content.splitlines()
+        lines = content.splitlines()
 
-            # Find bounds
-            start_index = max(0, line_start - 1 - context_lines)
-            if line_end is None:
-                end_index = min(len(lines), line_start + context_lines)
-            else:
-                end_index = min(len(lines), line_end + context_lines)
+        # Find bounds
+        start_index = max(0, line_start - 1 - context_lines)
+        if line_end is None:
+            end_index = min(len(lines), line_start + context_lines)
+        else:
+            end_index = min(len(lines), line_end + context_lines)
 
-            return "\n".join(lines[start_index:end_index])
-        except (OSError, UnicodeDecodeError):
-            return ""
+        return "\n".join(lines[start_index:end_index])
 
     @staticmethod
     def format(snippet: str, start_line: int) -> str:
@@ -104,22 +122,26 @@ class SourceAnalyzer:
 
     @staticmethod
     def find_context_bounds(
-        file_path: Path, line_start: int
+        file_path: Path, line_start: int, content: str | None = None
     ) -> tuple[int, str]:
         """Find the semantic context (function/class) containing the line.
 
         Args:
             file_path: Path to the target file.
             line_start: Line number where the error occurred.
+            content: Pre-read file content to avoid re-reading the file.
 
         Returns:
             A tuple of (start_index, info_string).
         """
-        if not file_path.is_file():
-            return 0, "unknown context"
+        if content is None:
+            if not file_path.is_file():
+                return 0, "unknown context"
+            content = read_file_content(file_path)
+            if content is None:
+                return SourceAnalyzer._fallback_search(file_path, line_start)
 
         try:
-            content = file_path.read_text(encoding="utf-8")
             tree = ast.parse(content)
             innermost_node = SourceAnalyzer._find_innermost_block(
                 tree, line_start
@@ -140,8 +162,10 @@ class SourceAnalyzer:
                 )
 
             return max(0, line_start - 10), "in module scope"
-        except (OSError, UnicodeDecodeError, SyntaxError):
-            return SourceAnalyzer._fallback_search(file_path, line_start)
+        except SyntaxError:
+            return SourceAnalyzer._fallback_search(
+                file_path, line_start, content=content
+            )
 
     @staticmethod
     def extract_symbols(
@@ -203,10 +227,14 @@ class SourceAnalyzer:
         return innermost_node
 
     @staticmethod
-    def _fallback_search(file_path: Path, line_start: int) -> tuple[int, str]:
+    def _fallback_search(
+        file_path: Path, line_start: int, content: str | None = None
+    ) -> tuple[int, str]:
         """Simple string-based search for context when AST fails."""
         try:
-            lines = file_path.read_text(encoding="utf-8").splitlines()
+            if content is None:
+                content = file_path.read_text(encoding="utf-8")
+            lines = content.splitlines()
             current_idx = line_start - 1
             for i in range(current_idx, -1, -1):
                 if i >= len(lines):
@@ -274,12 +302,23 @@ def get_linter_context(
     line_start: int,
     line_end: int | None = None,
     context_lines: int = 10,
+    content: str | None = None,
 ) -> tuple[str, int, str]:
-    """Helper for linters to get snippet and context in one call."""
+    """Helper for linters to get snippet and context in one call.
+
+    Args:
+        file_path: Path to the target file.
+        line_start: Line number where the error occurred.
+        line_end: 1-indexed ending line number (optional).
+        context_lines: Number of surrounding lines to include.
+        content: Pre-read file content to avoid re-reading the file.
+            Pass the same content across findings in a single file so the
+            file is read and parsed only once.
+    """
     snippet_start_idx, semantic_info = SourceAnalyzer.find_context_bounds(
-        file_path, line_start
+        file_path, line_start, content=content
     )
     raw_snippet = SnippetProvider.extract(
-        file_path, line_start, line_end, context_lines
+        file_path, line_start, line_end, context_lines, content=content
     )
     return raw_snippet, snippet_start_idx + 1, semantic_info

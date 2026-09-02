@@ -149,6 +149,55 @@ async def test_bandit_parses_fields(mocker, linter) -> None:
     assert "shell injection" in result.message
 
 
+@pytest.mark.asyncio
+async def test_bandit_reuses_content_per_file(
+    mocker, linter, tmp_path
+) -> None:
+    """Bandit reuses one read of file content across multiple findings."""
+    src = tmp_path / "target"
+    src.mkdir()
+    mod = src / "mod.py"
+    mod.write_text("x = 1\n", encoding="utf-8")
+
+    stdout = json.dumps(
+        {
+            "results": [
+                {
+                    "test_id": "B603",
+                    "line_number": 1,
+                    "issue_severity": "LOW",
+                    "issue_text": "issue 1",
+                    "filename": str(mod),
+                },
+                {
+                    "test_id": "B603",
+                    "line_number": 2,
+                    "issue_severity": "LOW",
+                    "issue_text": "issue 2",
+                    "filename": str(mod),
+                },
+            ]
+        }
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(BanditLinter, "_run_command", return_value=mock_result)
+    context_calls = []
+
+    def _capture_content(**kwargs):
+        context_calls.append(kwargs.get("content"))
+        return ("snippet", 1, "context")
+
+    mocker.patch(
+        "sanopy.linters.bandit.get_linter_context",
+        side_effect=_capture_content,
+    )
+
+    results = await linter.run(src)
+
+    assert len(results) == 2
+    assert context_calls == ["x = 1\n", "x = 1\n"]
+
+
 @pytest.mark.parametrize(
     "is_dir, config_present",
     [

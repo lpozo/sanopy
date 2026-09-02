@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import get_linter_context, read_file_content
 from sanopy.linters.result import LinterResult
 
 
@@ -48,8 +48,12 @@ class PyrightLinter(BaseLinter):
             return []
 
         parsed_results = []
+        content_cache: dict[Path, str | None] = {}
         for diag in diagnostics:
             file_path = Path(diag.get("file", str(target)))
+
+            if file_path not in content_cache:
+                content_cache[file_path] = read_file_content(file_path)
 
             # Pyright is 0-indexed, normalizing to 1-indexed for LinterResult
             line_start = (
@@ -73,6 +77,7 @@ class PyrightLinter(BaseLinter):
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=10,
+                content=content_cache[file_path],
             )
 
             parsed_results.append(

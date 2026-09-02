@@ -6,6 +6,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+### Performance
+
+- Each linter now reads the source file once per file and reuses that content for every finding in it, instead of re-reading and AST-parsing the file once per finding. `get_linter_context`, `SourceAnalyzer.find_context_bounds`, and `SnippetProvider.extract` accept an optional `content` argument; the per-finding read (and its fallback path) is skipped when callers supply it.
+
 ### Changed
 
 - Linter findings now carry the linter's native `raw_severity` (Bandit severity, MyPy error/warning/note, Pyright severity, Semgrep severity, Safety severity, Pylint category), and `normalized_severity` maps that into one of `error`/`warning`/`info`. Previously `raw_severity` was always null and every security/type-linter finding was bucketed as `error`, so a Bandit LOW finding was indistinguishable from a HIGH one. `schema_version` stays `1.0.0` — only the values of existing fields changed, not the structure.
