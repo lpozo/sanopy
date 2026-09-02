@@ -1,5 +1,8 @@
 """Configuration management for Sanopy."""
 
+import contextlib
+import os
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -114,6 +117,29 @@ def _render_settings(
     settings: dict[str, list[str]],
 ) -> list[str]:
     return [f"{k} = {v}\n" for k, v in settings.items()]
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` atomically.
+
+    The content is written to a temporary file in the destination
+    directory and then renamed over the target with ``os.replace``, so
+    a crash mid-write never leaves a truncated or half-written config
+    behind.
+    """
+    directory = path.parent if str(path.parent) else "."
+    fd, tmp_name = tempfile.mkstemp(
+        dir=directory, prefix=path.name, suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            tmp.write(content)
+        tmp_path.replace(path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 def _as_section(data: object, key: str) -> dict[str, object]:
@@ -326,4 +352,4 @@ class Config:
             lines.append("\n[pip-audit]\n")
             lines.append(f"ignore_vulns = {self.ignore_vulns}\n")
 
-        config_path.write_text("".join(lines), encoding="utf-8")
+        _atomic_write_text(config_path, "".join(lines))

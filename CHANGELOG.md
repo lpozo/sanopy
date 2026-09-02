@@ -8,6 +8,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ### Fixed
 
+- `Config.save()` now writes the config file atomically: the TOML content is written to a temporary file in the destination directory and renamed over the target. A crash mid-write no longer leaves a truncated or half-written `.sanopy.toml` behind.
+- `sanopy.linters.SymbolInfo.kind` is now typed as `Literal["class", "function"]` instead of a bare `str`, so static analyzers can catch invalid symbol kinds.
 - `Config.load()` no longer masks OS-level read failures (permission denied, disk errors, a path pointing at a directory) as a generic `ValueError("Invalid configuration ...")`. These now propagate as their native `OSError`, so callers can distinguish "your file is unreadable" from "your file is invalid TOML". `sanopy scan` reports an unreadable config as an error (exit 2) and `sanopy init` flags it with the overwrite warning.
 - Bundled native config files (pylint/bandit/ruff) are now materialized into a fresh, unique temporary directory per call instead of a single shared, never-cleaned-up path under `$TMPDIR/sanopy/configs/`. Concurrent scans no longer race on the same file, and the temporary directories are removed once a scan run completes so they no longer accumulate in `$TMPDIR`.
 
@@ -19,6 +21,7 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 - `sanopy.linters` no longer injects individual linter classes into the package namespace via `globals()`. The package now exports only `LINTER_MAP`, `BaseLinter`, `Engine`, and `LinterResult`, so static analysis (mypy/pyright/IDE) can resolve these names. Individual linter classes remain importable from their own modules (e.g. `from sanopy.linters.ruff import RuffLinter`).
 - Linter findings now carry the linter's native `raw_severity` (Bandit severity, MyPy error/warning/note, Pyright severity, Semgrep severity, Safety severity, Pylint category), and `normalized_severity` maps that into one of `error`/`warning`/`info`. Previously `raw_severity` was always null and every security/type-linter finding was bucketed as `error`, so a Bandit LOW finding was indistinguishable from a HIGH one. `schema_version` stays `1.0.0` — only the values of existing fields changed, not the structure.
+- A multi-target scan now shares a semaphore that caps the number of linter subprocesses running at once (default 10), so 3 targets × 10 linters no longer spawns 30 simultaneous subprocesses. Total linter work is unchanged; the cap only bounds peak concurrency to avoid resource exhaustion.
 
 ## [0.2.2] - 2026-09-01
 
