@@ -22,7 +22,13 @@ def _discover_linters() -> dict[str, type[BaseLinter]]:
     package_path = [str(Path(__file__).parent)]
 
     for _, module_name, is_pkg in pkgutil.iter_modules(package_path):
-        if is_pkg or module_name in ("base", "engine", "result", "context"):
+        if is_pkg or module_name in (
+            "base",
+            "engine",
+            "result",
+            "context",
+            "config_discovery",
+        ):
             continue
 
         try:
@@ -50,8 +56,3 @@ LINTER_MAP = _discover_linters()
 
 # Export core classes and the map
 __all__ = ["BaseLinter", "Engine", "LinterResult", "LINTER_MAP"]
-
-# Also export individual linter classes for backward compatibility
-for _linter_cls in LINTER_MAP.values():
-    globals()[_linter_cls.__name__] = _linter_cls
-    __all__.append(_linter_cls.__name__)  # pyright: ignore[reportUnsupportedDunderAll]
