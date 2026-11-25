@@ -7,20 +7,24 @@ import pytest
 
 from sanopy.linters import LINTER_MAP, BaseLinter
 
-
-def _discover() -> dict[str, type[BaseLinter]]:
-    """Exercise the private discovery routine directly."""
-    from sanopy.linters import _discover_linters
-
-    return _discover_linters()
+KNOWN_LINTER_NAMES = {
+    "bandit",
+    "mypy",
+    "pip-audit",
+    "pylint",
+    "pyright",
+    "radon",
+    "ruff",
+    "safety",
+    "semgrep",
+    "vulture",
+}
 
 
 def test_discovery_finds_every_linter() -> None:
-    """Discovery builds a map keyed by lowercase linter name."""
-    discovered = _discover()
-
-    assert set(discovered) == set(LINTER_MAP)
-    assert all(issubclass(cls, BaseLinter) for cls in discovered.values())
+    """The public map contains exactly the shipped linters."""
+    assert set(LINTER_MAP) == KNOWN_LINTER_NAMES
+    assert all(issubclass(cls, BaseLinter) for cls in LINTER_MAP.values())
 
 
 @pytest.mark.parametrize(
@@ -33,9 +37,13 @@ def test_discovery_finds_every_linter() -> None:
 def test_discovery_skips_failing_module(mocker, exc: Exception) -> None:
     """A module that fails to import is skipped rather than fatal.
 
-    One linter module raising ImportError (or AttributeError while its
-    attributes are scanned) must not abort discovery of the others.
+    Reloading the package re-runs discovery through the public module
+    surface; one linter module raising ImportError (or AttributeError
+    while its attributes are scanned) must not abort discovery of the
+    others. The reload is restored afterwards so later tests see the
+    complete map.
     """
+    linters_pkg = importlib.import_module("sanopy.linters")
     real_import = importlib.import_module
 
     def _fail_one(name: str, *args: Any, **kwargs: Any) -> Any:
@@ -43,15 +51,17 @@ def test_discovery_skips_failing_module(mocker, exc: Exception) -> None:
             raise exc
         return real_import(name, *args, **kwargs)
 
-    mocker.patch(
+    patcher = mocker.patch(
         "sanopy.linters.importlib.import_module",
         side_effect=_fail_one,
     )
-
-    discovered = _discover()
-
-    assert "ruff" not in discovered
-    assert "mypy" in discovered
+    try:
+        reloaded = importlib.reload(linters_pkg)
+        assert "ruff" not in reloaded.LINTER_MAP
+        assert "mypy" in reloaded.LINTER_MAP
+    finally:
+        patcher.stop()
+        importlib.reload(linters_pkg)
 
 
 def test_package_exports_only_public_names() -> None:

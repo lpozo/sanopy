@@ -204,6 +204,8 @@ class MaterializingLinter(BaseLinter):
         self.config_path = materialize_linter_config(
             "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
         )
+        if self.config_path is not None:
+            self.track_temp_config(self.config_path)
         return ["echo", str(target)]
 
     def parse_output(self, process_result, target: Path) -> list[LinterResult]:
@@ -222,6 +224,36 @@ async def test_engine_cleans_up_materialized_configs() -> None:
     assert linter.config_path is not None
     assert not linter.config_path.exists()
     assert cleanup_materialized_configs() == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_only_removes_this_linters_configs() -> None:
+    """A linter's cleanup must not delete a peer's temp config.
+
+    This is the concurrent-scan race: a blanket cleanup used to remove
+    every tracked directory, deleting configs a parallel target's linter
+    was still reading.
+    """
+    first = MaterializingLinter()
+    second = MaterializingLinter()
+    first.config_path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    second.config_path = materialize_linter_config(
+        "ruff", "default", LinterConfig(settings={"select": ["E"]})
+    )
+    assert first.config_path is not None
+    assert second.config_path is not None
+    first.track_temp_config(first.config_path)
+    second.track_temp_config(second.config_path)
+
+    first.cleanup_temp_configs()
+
+    assert not first.config_path.exists()
+    assert second.config_path.exists()
+
+    second.cleanup_temp_configs()
+    assert not second.config_path.exists()
 
 
 class _ConcurrentLinter(BaseLinter):

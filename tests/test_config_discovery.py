@@ -8,7 +8,6 @@ import pytest
 
 from sanopy.config import Config, LinterConfig
 from sanopy.linters.config_discovery import (
-    _materialized_config_dirs,
     cleanup_materialized_configs,
     find_nearest_local_config,
     is_test_path,
@@ -20,16 +19,15 @@ from sanopy.linters.ruff import RuffLinter
 
 @pytest.fixture(autouse=True)
 def _isolate_materialized_dirs():
-    """Reset the module-level tracked-dir registry around each test.
+    """Keep the process-wide materialized-dir registry empty per test.
 
-    Some tests deliberately leave a dir behind (a failed rmdir) or
-    pre-delete one, so the shared global must be reset to avoid
-    cross-test contamination of the cleanup count.
+    Materialization is exercised directly in many tests; clearing the
+    registry before and after each test prevents leftovers from leaking
+    across tests.
     """
-    _materialized_config_dirs.clear()
+    cleanup_materialized_configs()
     yield
     cleanup_materialized_configs()
-    _materialized_config_dirs.clear()
 
 
 @pytest.mark.parametrize(
@@ -195,6 +193,22 @@ def test_cleanup_materialized_configs_is_idempotent() -> None:
         "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
     )
     cleanup_materialized_configs()
+    assert cleanup_materialized_configs() == 0
+
+
+def test_cleanup_materialized_configs_keeps_caller_set() -> None:
+    """Cleaning a subset must not consume the caller's directory set."""
+    path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    assert path is not None
+    config_dirs = {path.parent}
+
+    removed = cleanup_materialized_configs(config_dirs)
+
+    assert removed == 1
+    assert config_dirs == {path.parent}
+    assert not path.exists()
     assert cleanup_materialized_configs() == 0
 
 

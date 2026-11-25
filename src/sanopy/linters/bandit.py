@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context, read_file_content
+from sanopy.linters.context import ContentCache, get_linter_context
 from sanopy.linters.result import LinterResult
 
 
@@ -60,12 +60,9 @@ class BanditLinter(BaseLinter):
             return []
 
         parsed_results = []
-        content_cache: dict[Path, str | None] = {}
+        content_cache = ContentCache()
         for error in errors:
             file_path = Path(error.get("filename", target.name))
-
-            if file_path not in content_cache:
-                content_cache[file_path] = read_file_content(file_path)
 
             line_start = error.get("line_number", 1)
             line_range = error.get("line_range", [])
@@ -81,7 +78,7 @@ class BanditLinter(BaseLinter):
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=10,
-                content=content_cache[file_path],
+                content=content_cache.get(file_path),
             )
 
             parsed_results.append(

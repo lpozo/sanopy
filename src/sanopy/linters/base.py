@@ -15,6 +15,7 @@ from typing import TYPE_CHECKING
 
 from sanopy.config import DEFAULT_LINTER_CONFIGS
 from sanopy.linters.config_discovery import (
+    cleanup_materialized_configs,
     find_nearest_local_config,
     is_test_path,
     materialize_linter_config,
@@ -86,6 +87,10 @@ class BaseLinter(abc.ABC):
         self.command_timeout = (
             command_timeout if command_timeout is not None else default_timeout
         )
+        # Temp config dirs materialized by this instance during a run.
+        # Tracked per instance so concurrent scans only clean up their
+        # own directories instead of racing on a shared registry.
+        self._temp_config_dirs: set[Path] = set()
 
     @classmethod
     def from_config(cls, config: Config | None = None) -> BaseLinter:
@@ -249,6 +254,25 @@ class BaseLinter(abc.ABC):
 
         return results
 
+    def track_temp_config(self, config_path: Path) -> None:
+        """Register a materialized config file for post-run cleanup.
+
+        Args:
+            config_path: Path to the materialized config file; its
+                parent directory is what gets removed at cleanup time.
+        """
+        self._temp_config_dirs.add(config_path.parent)
+
+    def cleanup_temp_configs(self) -> None:
+        """Remove the temp config dirs this instance materialized.
+
+        Called by ``Engine.run_all`` once this linter's subprocess has
+        consumed them. Removing only this instance's directories keeps a
+        concurrent scan's configs untouched.
+        """
+        if self._temp_config_dirs:
+            cleanup_materialized_configs(self._temp_config_dirs)
+
     def _get_effective_config_path(
         self, target: Path, candidate_filenames: list[str]
     ) -> Path | None:
@@ -277,9 +301,12 @@ class BaseLinter(abc.ABC):
         if linter_config is None:
             linter_config = DEFAULT_LINTER_CONFIGS.get(self.name.lower())
         if linter_config is not None:
-            return materialize_linter_config(
+            config_path = materialize_linter_config(
                 self.name.lower(), category, linter_config
             )
+            if config_path is not None:
+                self.track_temp_config(config_path)
+            return config_path
         return None
 
     async def _run_command(

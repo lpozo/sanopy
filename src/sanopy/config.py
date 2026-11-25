@@ -2,6 +2,7 @@
 
 import contextlib
 import os
+import stat
 import tempfile
 import tomllib
 from dataclasses import dataclass, field
@@ -119,6 +120,25 @@ def _render_settings(
     return [f"{k} = {v}\n" for k, v in settings.items()]
 
 
+def _apply_default_file_mode(tmp_path: Path, target: Path) -> None:
+    """Give the temp file the mode a plain write to ``target`` would.
+
+    ``tempfile.mkstemp`` creates files with mode ``0o600``; an atomic
+    write must not silently tighten (or otherwise change) the
+    permissions of the config it replaces or creates.
+    """
+    try:
+        existing_mode = stat.S_IMODE(target.stat().st_mode)
+    except OSError:
+        existing_mode = None
+    if existing_mode is not None:
+        tmp_path.chmod(existing_mode)
+        return
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    tmp_path.chmod(0o666 & ~current_umask)
+
+
 def _atomic_write_text(path: Path, content: str) -> None:
     """Write ``content`` to ``path`` atomically.
 
@@ -135,6 +155,7 @@ def _atomic_write_text(path: Path, content: str) -> None:
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as tmp:
             tmp.write(content)
+        _apply_default_file_mode(tmp_path, path)
         tmp_path.replace(path)
     except BaseException:
         with contextlib.suppress(OSError):

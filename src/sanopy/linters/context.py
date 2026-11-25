@@ -7,6 +7,21 @@ from pathlib import Path
 from typing import Any, Literal
 
 
+class _ContentNotSupplied:  # pylint: disable=too-few-public-methods
+    """Sentinel type for an omitted ``content`` argument."""
+
+    __slots__ = ()
+
+
+#: Default for ``content`` parameters. It distinguishes "the caller did
+#: not supply content" from an explicit ``None``, which means "the file
+#: was read and found unreadable — do not try to read it again".
+CONTENT_NOT_SUPPLIED = _ContentNotSupplied()
+
+#: Value accepted by the ``content`` parameter of the context helpers.
+type ContentArg = str | None | _ContentNotSupplied
+
+
 @dataclass
 class SymbolInfo:
     """Information about a public symbol (class or function).
@@ -40,6 +55,49 @@ def read_file_content(file_path: Path) -> str | None:
         return None
 
 
+class ContentCache:  # pylint: disable=too-few-public-methods
+    """Per-parse cache of file reads, including failed reads.
+
+    ``get`` reads each path at most once: a file that is missing or not
+    valid UTF-8 is remembered as ``None``, so passing the result to
+    ``get_linter_context`` never re-attempts the read for later findings
+    in the same file.
+    """
+
+    def __init__(self) -> None:
+        """Initialise an empty cache."""
+        self._entries: dict[Path, str | None] = {}
+
+    def get(self, file_path: Path) -> str | None:
+        """Return the file's content, reading it at most once.
+
+        Args:
+            file_path: Path to the target file.
+
+        Returns:
+            The file's UTF-8 text, or None when it is unreadable.
+        """
+        if file_path not in self._entries:
+            self._entries[file_path] = read_file_content(file_path)
+        return self._entries[file_path]
+
+
+def _resolve_content(file_path: Path, content: ContentArg) -> str | None:
+    """Resolve a ``content`` argument to text, or None when unreadable.
+
+    Args:
+        file_path: Path to the target file.
+        content: Caller-supplied content, ``None`` for a file already
+            known to be unreadable, or the "not supplied" sentinel.
+
+    Returns:
+        The file content to work with, or None when there is none.
+    """
+    if isinstance(content, _ContentNotSupplied):
+        return read_file_content(file_path) if file_path.is_file() else None
+    return content
+
+
 @dataclass
 class ProjectSummary:
     """Compact summary of a target project.
@@ -65,7 +123,7 @@ class SnippetProvider:
         line_start: int,
         line_end: int | None = None,
         context_lines: int = 5,
-        content: str | None = None,
+        content: ContentArg = CONTENT_NOT_SUPPLIED,
     ) -> str:
         """Extract a raw snippet of code without line numbers.
 
@@ -75,16 +133,15 @@ class SnippetProvider:
             line_end: 1-indexed ending line number (optional).
             context_lines: Number of surrounding lines to include.
             content: Pre-read file content to avoid re-reading the file.
+                Omit to read the file; pass ``None`` when the file is
+                already known to be unreadable.
 
         Returns:
             The raw string content of the snippet.
         """
+        content = _resolve_content(file_path, content)
         if content is None:
-            if not file_path.is_file():
-                return ""
-            content = read_file_content(file_path)
-            if content is None:
-                return ""
+            return ""
 
         lines = content.splitlines()
 
@@ -122,7 +179,9 @@ class SourceAnalyzer:
 
     @staticmethod
     def find_context_bounds(
-        file_path: Path, line_start: int, content: str | None = None
+        file_path: Path,
+        line_start: int,
+        content: ContentArg = CONTENT_NOT_SUPPLIED,
     ) -> tuple[int, str]:
         """Find the semantic context (function/class) containing the line.
 
@@ -130,16 +189,15 @@ class SourceAnalyzer:
             file_path: Path to the target file.
             line_start: Line number where the error occurred.
             content: Pre-read file content to avoid re-reading the file.
+                Omit to read the file; pass ``None`` when the file is
+                already known to be unreadable.
 
         Returns:
             A tuple of (start_index, info_string).
         """
+        content = _resolve_content(file_path, content)
         if content is None:
-            if not file_path.is_file():
-                return 0, "unknown context"
-            content = read_file_content(file_path)
-            if content is None:
-                return SourceAnalyzer._fallback_search(file_path, line_start)
+            return 0, "unknown context"
 
         try:
             tree = ast.parse(content)
@@ -163,9 +221,7 @@ class SourceAnalyzer:
 
             return max(0, line_start - 10), "in module scope"
         except SyntaxError:
-            return SourceAnalyzer._fallback_search(
-                file_path, line_start, content=content
-            )
+            return SourceAnalyzer._fallback_search(line_start, content)
 
     @staticmethod
     def extract_symbols(
@@ -227,25 +283,18 @@ class SourceAnalyzer:
         return innermost_node
 
     @staticmethod
-    def _fallback_search(
-        file_path: Path, line_start: int, content: str | None = None
-    ) -> tuple[int, str]:
+    def _fallback_search(line_start: int, content: str) -> tuple[int, str]:
         """Simple string-based search for context when AST fails."""
-        try:
-            if content is None:
-                content = file_path.read_text(encoding="utf-8")
-            lines = content.splitlines()
-            current_idx = line_start - 1
-            for i in range(current_idx, -1, -1):
-                if i >= len(lines):
-                    continue
-                line = lines[i].strip()
-                if line.startswith(("def ", "class ")):
-                    name = line.split("(")[0].split(":")[0].strip()
-                    return i, f"in {name}"
-            return max(0, current_idx - 10), "in module scope"
-        except (OSError, UnicodeDecodeError, IndexError):
-            return 0, "unknown context"
+        lines = content.splitlines()
+        current_idx = line_start - 1
+        for i in range(current_idx, -1, -1):
+            if i >= len(lines):
+                continue
+            line = lines[i].strip()
+            if line.startswith(("def ", "class ")):
+                name = line.split("(")[0].split(":")[0].strip()
+                return i, f"in {name}"
+        return max(0, current_idx - 10), "in module scope"
 
 
 class ProjectScanner:
@@ -302,7 +351,7 @@ def get_linter_context(
     line_start: int,
     line_end: int | None = None,
     context_lines: int = 10,
-    content: str | None = None,
+    content: ContentArg = CONTENT_NOT_SUPPLIED,
 ) -> tuple[str, int, str]:
     """Helper for linters to get snippet and context in one call.
 
@@ -312,8 +361,10 @@ def get_linter_context(
         line_end: 1-indexed ending line number (optional).
         context_lines: Number of surrounding lines to include.
         content: Pre-read file content to avoid re-reading the file.
-            Pass the same content across findings in a single file so the
-            file is read and parsed only once.
+            Omit to read the file; pass ``None`` when the file is already
+            known to be unreadable. Linters pass ``ContentCache.get(path)``
+            so each file is read at most once per parse, failed reads
+            included.
     """
     snippet_start_idx, semantic_info = SourceAnalyzer.find_context_bounds(
         file_path, line_start, content=content
