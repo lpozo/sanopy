@@ -1,5 +1,6 @@
 """Tests for context extraction and project scanning."""
 
+import ast
 from pathlib import Path
 
 import pytest
@@ -147,6 +148,24 @@ def test_content_cache_reads_once_and_caches_misses(tmp_path, mocker) -> None:
     assert cache.get(missing) is None
     assert cache.get(missing) is None
     assert len(spy.call_args_list) == 2
+
+
+def test_context_cache_parses_each_file_once(tmp_path, mocker) -> None:
+    """Semantic context is parsed once and reused across findings."""
+    test_file = _write(
+        tmp_path,
+        "test.py",
+        "def foo():\n    x = 1\n    return x\n",
+    )
+    cache = ContentCache()
+    parse_spy = mocker.spy(ast, "parse")
+
+    first = get_linter_context(test_file, 2, cache=cache)
+    second = get_linter_context(test_file, 3, cache=cache)
+
+    parse_spy.assert_called_once()
+    assert first[2] == "in def foo"
+    assert second[2] == "in def foo"
 
 
 @pytest.mark.parametrize(
