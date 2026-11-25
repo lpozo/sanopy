@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import ContentCache, get_linter_context
 from sanopy.linters.result import LinterResult
 
 
@@ -48,6 +48,7 @@ class PyrightLinter(BaseLinter):
             return []
 
         parsed_results = []
+        content_cache = ContentCache()
         for diag in diagnostics:
             file_path = Path(diag.get("file", str(target)))
 
@@ -64,14 +65,16 @@ class PyrightLinter(BaseLinter):
             )
 
             error_code = diag.get("rule", "Unknown")
-            severity = diag.get("severity", "error").upper()
-            message = f"[{severity}] {diag.get('message', 'No message')}"
+            severity = diag.get("severity", "error")
+            message_text = diag.get("message", "No message")
+            message = f"[{severity.upper()}] {message_text}"
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=10,
+                content=content_cache.get(file_path),
             )
 
             parsed_results.append(
@@ -84,6 +87,7 @@ class PyrightLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=severity.lower(),
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

@@ -1,5 +1,6 @@
 """Handler for the 'scan' command."""
 
+import asyncio
 import hashlib
 import json
 from collections import Counter
@@ -27,6 +28,30 @@ from sanopy.cli.ui import console, err_console
 from sanopy.config import Config
 from sanopy.linters import LINTER_MAP, BaseLinter, Engine
 from sanopy.linters.result import LinterResult
+
+_RAW_TO_SEVERITY_BUCKET = {
+    "error": "error",
+    "fatal": "error",
+    "critical": "error",
+    "high": "error",
+    "warning": "warning",
+    "medium": "warning",
+    "info": "info",
+    "note": "info",
+    "low": "info",
+    "hint": "info",
+    "convention": "info",
+    "refactor": "info",
+}
+
+_ERROR_DEFAULT_LINTERS = {
+    "bandit",
+    "pip-audit",
+    "safety",
+    "semgrep",
+    "mypy",
+    "pyright",
+}
 
 
 def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
@@ -57,7 +82,7 @@ def preflight(only: str | None, skip: str | None) -> tuple[Config, list[str]]:
 
     try:
         config = Config.load()
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, OSError) as exc:
         err_console.print(f"[red]{escape(str(exc))}[/red]")
         raise ClickExit(2) from exc
 
@@ -114,6 +139,7 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     output: Path | None,
     output_mode: Literal["machine", "human"] = "machine",
     human_readable: bool = False,
+    semaphore: asyncio.Semaphore | None = None,
 ) -> tuple[int, str | None]:
     """Run all active linters on a target path and write results to JSON.
 
@@ -130,6 +156,8 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
             or human-focused progress and summaries.
         human_readable: When ``True``, also writes a markdown report to
             ``linting-report-<target>.md``.
+        semaphore: Optional shared semaphore limiting concurrent linter
+            subprocesses across multiple targets.
 
     Returns:
         A tuple of the number of findings for the target and the serialized
@@ -143,7 +171,9 @@ async def handle_scan(  # pylint: disable=too-many-arguments,too-many-positional
     engine = Engine(
         linters=[_build_linter(name, config) for name in active_linters]
     )
-    results = await _run_linters(engine, target, active_linters, output_mode)
+    results = await _run_linters(
+        engine, target, active_linters, output_mode, semaphore
+    )
 
     # Logical Sort: by file then line
     results.sort(key=lambda r: (str(r.file_path), r.line_start))
@@ -163,10 +193,11 @@ async def _run_linters(
     target: Path,
     active_linters: list[str],
     output_mode: Literal["machine", "human"],
+    semaphore: asyncio.Semaphore | None = None,
 ) -> list[LinterResult]:
     """Run linters with optional human-mode progress rendering."""
     if output_mode != "human":
-        return await engine.run_all(target)
+        return await engine.run_all(target, semaphore=semaphore)
 
     with Progress(
         SpinnerColumn(),
@@ -182,7 +213,9 @@ async def _run_linters(
         def progress_cb() -> None:
             progress.update(task_id, advance=1)
 
-        return await engine.run_all(target, progress_callback=progress_cb)
+        return await engine.run_all(
+            target, progress_callback=progress_cb, semaphore=semaphore
+        )
 
 
 def _render_scan_output(
@@ -314,25 +347,23 @@ class ScanReporter:
         return hashlib.sha256(digest_input.encode("utf-8")).hexdigest()[:16]
 
     def _normalize_severity(self, result: LinterResult) -> str:
-        """Normalize linter severities into error/warning/info buckets."""
-        if result.raw_severity:
-            raw = str(result.raw_severity).lower()
-            if raw in {"error", "warning", "info"}:
-                return raw
+        """Normalize a linter severity into error/warning/info buckets.
+
+        A recognized ``raw_severity`` wins. Otherwise the bucket is
+        inferred from the linter name (security/type linters default to
+        error) and finally from the error-code prefix.
+        """
+        raw = str(result.raw_severity).lower() if result.raw_severity else ""
+        bucket = _RAW_TO_SEVERITY_BUCKET.get(raw)
+        if bucket is not None:
+            return bucket
 
         linter = result.linter_name.lower()
         code = result.error_code.upper()
 
-        if linter in {
-            "bandit",
-            "pip-audit",
-            "safety",
-            "semgrep",
-            "mypy",
-            "pyright",
-        }:
-            return "error"
-        if code.startswith(("E", "F", "B")):
+        if linter in _ERROR_DEFAULT_LINTERS or code.startswith(
+            ("E", "F", "B")
+        ):
             return "error"
         if code.startswith(("W", "C", "R")):
             return "warning"

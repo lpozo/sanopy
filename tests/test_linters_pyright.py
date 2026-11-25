@@ -116,6 +116,7 @@ async def test_pyright_parses_fields(mocker, linter) -> None:
     assert result.col_start == 3
     assert result.col_end == 9
     assert result.error_code == "reportUnknownVariableType"
+    assert result.raw_severity == "warning"
     assert "[WARNING]" in result.message
 
 

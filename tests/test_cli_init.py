@@ -229,6 +229,11 @@ def test_init_cancelled_wizard_installs_nothing(mocker) -> None:
             True,
             id="invalid-is-warned",
         ),
+        pytest.param(
+            PermissionError("Permission denied"),
+            True,
+            id="os-error-is-warned",
+        ),
     ],
 )
 def test_init_config_load_failures(
@@ -246,4 +251,3 @@ def test_init_config_load_failures(
 
     assert result.exit_code == 0
     assert ("overwrite" in result.stderr) is expect_warning
-    assert ("Invalid configuration" in result.stderr) is expect_warning

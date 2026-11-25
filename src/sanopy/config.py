@@ -1,5 +1,9 @@
 """Configuration management for Sanopy."""
 
+import contextlib
+import os
+import stat
+import tempfile
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -114,6 +118,49 @@ def _render_settings(
     settings: dict[str, list[str]],
 ) -> list[str]:
     return [f"{k} = {v}\n" for k, v in settings.items()]
+
+
+def _apply_default_file_mode(tmp_path: Path, target: Path) -> None:
+    """Give the temp file the mode a plain write to ``target`` would.
+
+    ``tempfile.mkstemp`` creates files with mode ``0o600``; an atomic
+    write must not silently tighten (or otherwise change) the
+    permissions of the config it replaces or creates.
+    """
+    try:
+        existing_mode = stat.S_IMODE(target.stat().st_mode)
+    except OSError:
+        existing_mode = None
+    if existing_mode is not None:
+        tmp_path.chmod(existing_mode)
+        return
+    current_umask = os.umask(0)
+    os.umask(current_umask)
+    tmp_path.chmod(0o666 & ~current_umask)
+
+
+def _atomic_write_text(path: Path, content: str) -> None:
+    """Write ``content`` to ``path`` atomically.
+
+    The content is written to a temporary file in the destination
+    directory and then renamed over the target with ``os.replace``, so
+    a crash mid-write never leaves a truncated or half-written config
+    behind.
+    """
+    directory = path.parent if str(path.parent) else "."
+    fd, tmp_name = tempfile.mkstemp(
+        dir=directory, prefix=path.name, suffix=".tmp"
+    )
+    tmp_path = Path(tmp_name)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as tmp:
+            tmp.write(content)
+        _apply_default_file_mode(tmp_path, path)
+        tmp_path.replace(path)
+    except BaseException:
+        with contextlib.suppress(OSError):
+            tmp_path.unlink()
+        raise
 
 
 def _as_section(data: object, key: str) -> dict[str, object]:
@@ -241,6 +288,8 @@ class Config:
 
         Raises:
             FileNotFoundError: If the configuration file does not exist.
+            OSError: If the file exists but cannot be read (permission
+                or disk errors); the underlying error propagates.
             ValueError: If the file exists but contains invalid TOML.
         """
         config_path = path or DEFAULT_CONFIG_PATH
@@ -273,7 +322,9 @@ class Config:
                 )
                 config._normalize()
                 return config
-        except (OSError, ValueError) as exc:
+        except OSError:  # pylint: disable=try-except-raise
+            raise
+        except ValueError as exc:
             raise ValueError(
                 f"Invalid configuration at {config_path}. "
                 "Run 'sanopy init' to reset it."
@@ -322,4 +373,4 @@ class Config:
             lines.append("\n[pip-audit]\n")
             lines.append(f"ignore_vulns = {self.ignore_vulns}\n")
 
-        config_path.write_text("".join(lines), encoding="utf-8")
+        _atomic_write_text(config_path, "".join(lines))

@@ -92,6 +92,40 @@ envelope:
 }
 ```
 
+Each entry in `findings` carries the finding's `id`, `message`,
+`location`, `context`, and a `linter` object naming the rule plus two
+severity fields:
+
+- `raw_severity` — the linter's own severity string when it reports one
+  (Bandit `LOW`/`MEDIUM`/`HIGH`, MyPy `error`/`warning`/`note`, and so on),
+  otherwise `null`.
+- `normalized_severity` — that raw value bucketed into `error`, `warning`,
+  or `info`. When the linter reports no severity, the bucket is inferred
+  from the linter and its rule id instead.
+
+```json
+{
+  "id": "3f7c1e2b9a4d6f08",
+  "message": "Use of eval detected",
+  "linter": {
+    "name": "Semgrep",
+    "rule_id": "python.lang.security.audit.eval-used",
+    "raw_severity": "warning",
+    "normalized_severity": "warning"
+  },
+  "location": {
+    "path": "src/mod.py",
+    "start": {"line": 10, "column": 4},
+    "end": {"line": 10, "column": 20}
+  },
+  "context": {
+    "snippet": "value = eval(user_input)",
+    "snippet_start_line": 10,
+    "semantic": "in def load_config"
+  }
+}
+```
+
 Use human output mode for terminal-friendly progress and summaries:
 
 ```bash
@@ -105,7 +139,9 @@ sanopy scan src/ tests/
 ```
 
 When scanning multiple targets, the results are merged into a single JSON
-document, and `run.target` becomes an array of the scanned paths.
+document, and `run.target` becomes an array of the scanned paths. The merged
+`run.active_linters` is the union of every target's active linters (in order,
+deduplicated), and `run.finding_count` is the sum across targets.
 
 Generate a human-readable Markdown report:
 
@@ -223,6 +259,8 @@ The `.sanopy.toml` file controls linter defaults for the current project.
 - Manual workflow: run `sanopy init` and answer prompts.
 - CI/AI workflow: run `sanopy init --only ... --skip ...` in scripts.
 - The file is required — `sanopy scan` exits `2` if it is missing.
+- `sanopy init` writes it atomically and preserves its existing permissions
+  (or applies the process umask when creating it).
 - Diagnostics (missing config, missing linters, scan failures) go to
   stderr, so stdout stays a valid JSON document in machine mode.
 

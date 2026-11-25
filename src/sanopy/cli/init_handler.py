@@ -57,7 +57,7 @@ class InitHandler:
             self.config = Config.load()
         except FileNotFoundError:
             self.config = Config.defaults()
-        except ValueError as exc:
+        except (ValueError, OSError) as exc:
             err_console.print(
                 f"[yellow]{escape(str(exc))}[/yellow]\n"
                 "[yellow]Continuing with built-in defaults. Saving will "

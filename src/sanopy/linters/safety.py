@@ -118,6 +118,7 @@ class SafetyLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=f"VULN-{vuln_id}",
                     message=message,
+                    raw_severity=severity,
                     snippet_context="",
                 )
             )

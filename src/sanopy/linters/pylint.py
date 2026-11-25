@@ -4,8 +4,18 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import ContentCache, get_linter_context
 from sanopy.linters.result import LinterResult
+
+#: Severity derived from the first character of a pylint message-id, used
+#: only when the native ``type`` field is absent from the JSON output.
+SEVERITY_BY_MESSAGE_ID_PREFIX = {
+    "E": "error",
+    "F": "fatal",
+    "W": "warning",
+    "C": "convention",
+    "R": "refactor",
+}
 
 
 class PylintLinter(BaseLinter):
@@ -58,6 +68,7 @@ class PylintLinter(BaseLinter):
             return []
 
         parsed_results = []
+        content_cache = ContentCache()
         for error in errors:
             file_path = Path(error.get("path", target.name))
 
@@ -71,11 +82,18 @@ class PylintLinter(BaseLinter):
             )
             message = error.get("message", "Unknown error")
 
+            # The native `type` field is authoritative; the message-id
+            # prefix is a fallback for older/trimmed JSON output.
+            raw_severity = error.get("type") or (
+                SEVERITY_BY_MESSAGE_ID_PREFIX.get(error_code.upper()[:1])
+            )
+
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
                 line_start=line_start,
                 line_end=line_end,
                 context_lines=10,
+                content=content_cache.get(file_path),
             )
 
             parsed_results.append(
@@ -88,6 +106,7 @@ class PylintLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=raw_severity,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from sanopy.linters.base import AsyncCompletedProcess
+from sanopy.linters.context import get_linter_context
 from sanopy.linters.ruff import RuffLinter
 
 
@@ -108,7 +109,41 @@ async def test_ruff_parses_fields(mocker, linter) -> None:
     assert result.col_start == 1
     assert result.col_end == 101
     assert result.error_code == "E501"
+    assert result.raw_severity is None
     assert result.message == "Line too long (101 > 88)"
+
+
+@pytest.mark.asyncio
+async def test_ruff_unreadable_finding_file_is_graceful(
+    mocker, linter, tmp_path
+) -> None:
+    """Findings pointing at an unreadable file do not crash parsing."""
+    binary = tmp_path / "target"
+    binary.mkdir()
+    mod = binary / "mod.bin"
+    mod.write_bytes(b"\xff\xfe\xfd")
+
+    stdout = json.dumps(
+        [
+            {
+                "code": "E501",
+                "message": "odd",
+                "filename": str(mod),
+                "location": {"row": 1, "column": 1},
+            }
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(RuffLinter, "_run_command", return_value=mock_result)
+    mocker.patch(
+        "sanopy.linters.ruff.get_linter_context",
+        side_effect=get_linter_context,
+    )
+
+    results = await linter.run(binary)
+
+    assert len(results) == 1
+    assert results[0].snippet_context == ""
 
 
 @pytest.mark.parametrize("config_present", [False, True])

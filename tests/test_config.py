@@ -1,5 +1,8 @@
 """Tests for the configuration system."""
 
+import os
+import stat
+
 import pytest
 
 from sanopy.config import (
@@ -89,6 +92,59 @@ def test_config_save_writes_sections(tmp_path) -> None:
     assert "ignore_cves = ['CVE-1']" in content
 
 
+def test_config_save_is_atomic_and_leaves_no_temp_files(tmp_path) -> None:
+    """save writes atomically and leaves no temp residue behind."""
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("old", encoding="utf-8")
+
+    Config(only_linters=["ruff"]).save(config_file)
+
+    loaded = Config.load(config_file)
+    assert loaded.only_linters == ["ruff"]
+    assert [p.name for p in tmp_path.iterdir()] == ["sanopy.toml"]
+
+
+def test_config_save_preserves_existing_file_mode(tmp_path) -> None:
+    """Overwriting an existing config keeps its permission bits."""
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("old", encoding="utf-8")
+    config_file.chmod(0o644)
+
+    Config(only_linters=["ruff"]).save(config_file)
+
+    assert stat.S_IMODE(config_file.stat().st_mode) == 0o644
+
+
+def test_config_save_new_file_uses_umask_not_mkstemp_mode(tmp_path) -> None:
+    """A newly created config honors the umask, not mkstemp's 0600."""
+    old_umask = os.umask(0o022)
+    try:
+        config_file = tmp_path / "sanopy.toml"
+        Config(only_linters=["ruff"]).save(config_file)
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(config_file.stat().st_mode) == 0o644
+
+
+def test_config_save_cleans_temp_on_failure(tmp_path) -> None:
+    """A failed save removes the temp file and leaves the target intact."""
+    from unittest.mock import patch
+
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("original", encoding="utf-8")
+    config = Config(only_linters=["ruff"])
+
+    with (
+        patch("pathlib.Path.replace", side_effect=OSError("disk full")),
+        pytest.raises(OSError),
+    ):
+        config.save(config_file)
+
+    assert config_file.read_text(encoding="utf-8") == "original"
+    assert [p.name for p in tmp_path.iterdir()] == ["sanopy.toml"]
+
+
 def test_config_load_raises_when_file_missing(tmp_path) -> None:
     """Test loading a non-existent config raises FileNotFoundError."""
     config_file = tmp_path / "non_existent.toml"
@@ -97,6 +153,28 @@ def test_config_load_raises_when_file_missing(tmp_path) -> None:
         Config.load(config_file)
 
     assert not config_file.exists()
+
+
+def test_config_load_propagates_os_error(tmp_path) -> None:
+    """OSError from reading the file is not masked as ValueError.
+
+    Permission errors and disk failures are OS-level issues, not
+    invalid TOML — re-raising them as ValueError("Invalid
+    configuration") hides the real cause from callers.
+    """
+    from unittest.mock import patch
+
+    config_file = tmp_path / ".sanopy.toml"
+    config_file.write_text("[linters]\n", encoding="utf-8")
+
+    with (
+        patch(
+            "sanopy.config.tomllib.load",
+            side_effect=PermissionError("Permission denied"),
+        ),
+        pytest.raises(OSError, match="Permission denied"),
+    ):
+        Config.load(config_file)
 
 
 @pytest.mark.parametrize(
@@ -315,9 +393,9 @@ def test_config_exists_reports_false_for_a_directory(tmp_path) -> None:
     (tmp_path / ".sanopy.toml").mkdir()
 
     # Path.exists() is true for directories, so this documents the gap:
-    # load() is what rejects it, with a ValueError.
+    # load() is what rejects it, with an OSError (IsADirectoryError).
     assert Config.exists(tmp_path / ".sanopy.toml") is True
-    with pytest.raises(ValueError, match="sanopy init"):
+    with pytest.raises(OSError):
         Config.load(tmp_path / ".sanopy.toml")
 
 

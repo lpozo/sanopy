@@ -1,10 +1,16 @@
 """Tests for the Linter Engine Orchestrator."""
 
+import asyncio
 from pathlib import Path
 
 import pytest
 
+from sanopy.config import LinterConfig
 from sanopy.linters import BaseLinter, Engine
+from sanopy.linters.config_discovery import (
+    cleanup_materialized_configs,
+    materialize_linter_config,
+)
 from sanopy.linters.result import LinterResult
 
 
@@ -181,3 +187,124 @@ async def test_engine_reports_failures_without_losing_results(
         assert any(
             name in msg and "RuntimeError" in msg for msg in caplog.messages
         )
+
+
+class MaterializingLinter(BaseLinter):
+    """A linter whose build_command materializes a temp config file."""
+
+    name = "Materializing"
+    package_name = "echo"
+    module_name: str | None = None
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.config_path: Path | None = None
+
+    def build_command(self, target: Path) -> list[str]:
+        self.config_path = materialize_linter_config(
+            "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+        )
+        if self.config_path is not None:
+            self.track_temp_config(self.config_path)
+        return ["echo", str(target)]
+
+    def parse_output(self, process_result, target: Path) -> list[LinterResult]:
+        return []
+
+
+@pytest.mark.asyncio
+async def test_engine_cleans_up_materialized_configs() -> None:
+    """Config files created during a run are removed when the run ends."""
+    linter = MaterializingLinter()
+    engine = Engine(linters=[linter])
+
+    cleanup_materialized_configs()
+    await engine.run_all(Path())
+
+    assert linter.config_path is not None
+    assert not linter.config_path.exists()
+    assert cleanup_materialized_configs() == 0
+
+
+@pytest.mark.asyncio
+async def test_cleanup_only_removes_this_linters_configs() -> None:
+    """A linter's cleanup must not delete a peer's temp config.
+
+    This is the concurrent-scan race: a blanket cleanup used to remove
+    every tracked directory, deleting configs a parallel target's linter
+    was still reading.
+    """
+    first = MaterializingLinter()
+    second = MaterializingLinter()
+    first.config_path = materialize_linter_config(
+        "pylint", "default", LinterConfig(settings={"disable": ["C0415"]})
+    )
+    second.config_path = materialize_linter_config(
+        "ruff", "default", LinterConfig(settings={"select": ["E"]})
+    )
+    assert first.config_path is not None
+    assert second.config_path is not None
+    first.track_temp_config(first.config_path)
+    second.track_temp_config(second.config_path)
+
+    first.cleanup_temp_configs()
+
+    assert not first.config_path.exists()
+    assert second.config_path.exists()
+
+    second.cleanup_temp_configs()
+    assert not second.config_path.exists()
+
+
+class _ConcurrentLinter(BaseLinter):
+    """A linter that tracks peak concurrent runs via its own ``run``."""
+
+    name = "Concurrent"
+    package_name = "echo"
+    module_name: str | None = None
+
+    def __init__(self, state: dict[str, int], delay: float) -> None:
+        super().__init__()
+        self._state = state
+        self._delay = delay
+
+    def build_command(self, target: Path) -> list[str]:
+        return ["echo", str(target)]
+
+    def parse_output(self, process_result, target: Path) -> list[LinterResult]:
+        return []
+
+    async def run(self, target: Path) -> list[LinterResult]:
+        self._state["active"] += 1
+        self._state["max"] = max(self._state["max"], self._state["active"])
+        await asyncio.sleep(self._delay)
+        self._state["active"] -= 1
+        return []
+
+
+@pytest.mark.asyncio
+async def test_engine_semaphore_caps_concurrency() -> None:
+    """A shared semaphore limits how many linters run at once."""
+    state = {"active": 0, "max": 0}
+    linters: list[BaseLinter] = [
+        _ConcurrentLinter(state, 0.05) for _ in range(6)
+    ]
+    semaphore = asyncio.Semaphore(2)
+
+    await Engine(linters=linters).run_all(Path(), semaphore=semaphore)
+
+    assert state["max"] <= 2
+    assert state["active"] == 0
+
+
+@pytest.mark.asyncio
+async def test_engine_without_semaphore_runs_concurrently() -> None:
+    """Without a semaphore, all linters may run at once."""
+    state = {"active": 0, "max": 0}
+    linters: list[BaseLinter] = [
+        _ConcurrentLinter(state, 0.05) for _ in range(6)
+    ]
+
+    await Engine(linters=linters).run_all(Path())
+
+    assert state["max"] >= 3

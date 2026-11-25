@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import ContentCache, get_linter_context
 from sanopy.linters.result import LinterResult
 
 MIN_COMPLEXITY_RANK = "C"
@@ -55,6 +55,7 @@ class RadonLinter(BaseLinter):
             return []
 
         parsed_results = []
+        content_cache = ContentCache()
         for file_path_str, blocks in data.items():
             file_path = Path(file_path_str)
 
@@ -80,6 +81,7 @@ class RadonLinter(BaseLinter):
                     line_start=line_start,
                     line_end=line_end,
                     context_lines=10,
+                    content=content_cache.get(file_path),
                 )
 
                 parsed_results.append(

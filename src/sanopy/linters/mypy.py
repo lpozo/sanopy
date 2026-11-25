@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 from sanopy.linters.base import AsyncCompletedProcess, BaseLinter
-from sanopy.linters.context import get_linter_context
+from sanopy.linters.context import ContentCache, get_linter_context
 from sanopy.linters.result import LinterResult
 
 
@@ -54,6 +54,7 @@ class MyPyLinter(BaseLinter):
         )
 
         parsed_results = []
+        content_cache = ContentCache()
         for line in process_result.stdout.splitlines():
             line = line.strip()
             if not line:
@@ -64,16 +65,19 @@ class MyPyLinter(BaseLinter):
                 continue
 
             file_path = Path(match.group("file"))
+
             line_start = int(match.group("line"))
             col_start = int(match.group("col"))
             message = match.group("msg")
             error_code = match.group("code")
+            severity = match.group("severity")
 
             raw_snippet, snippet_start, semantic_info = get_linter_context(
                 file_path=file_path,
                 line_start=line_start,
                 line_end=line_start,
                 context_lines=10,
+                content=content_cache.get(file_path),
             )
 
             parsed_results.append(
@@ -86,6 +90,7 @@ class MyPyLinter(BaseLinter):
                     linter_name=self.name,
                     error_code=error_code,
                     message=message,
+                    raw_severity=severity,
                     snippet_context=raw_snippet,
                     snippet_start_line=snippet_start,
                     semantic_context=semantic_info,

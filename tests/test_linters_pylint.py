@@ -114,7 +114,35 @@ async def test_pylint_parses_fields(mocker, linter) -> None:
     assert result.col_start == 4
     assert result.col_end == 9
     assert result.error_code == "R0913"
+    assert result.raw_severity == "refactor"
     assert result.message == "Too many arguments"
+
+
+@pytest.mark.asyncio
+async def test_pylint_prefers_native_type_over_message_id_prefix(
+    mocker, linter
+) -> None:
+    """The native `type` field wins over the message-id prefix fallback."""
+    stdout = json.dumps(
+        [
+            {
+                "line": 1,
+                "column": 1,
+                "path": "mod.py",
+                "message": "custom",
+                # E-prefixed id would fall back to "error"; the native
+                # type must take precedence.
+                "message-id": "E0001",
+                "type": "warning",
+            }
+        ]
+    )
+    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
+    mocker.patch.object(PylintLinter, "_run_command", return_value=mock_result)
+
+    results = await linter.run(Path("target.py"))
+
+    assert results[0].raw_severity == "warning"
 
 
 @pytest.mark.parametrize("config_present", [False, True])

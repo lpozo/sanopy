@@ -648,22 +648,16 @@ def test_scan_reporter_write_json_report(tmp_path, fake_result) -> None:
 
 
 def test_scan_reporter_write_human_readable_report(
-    tmp_path, fake_result
+    tmp_path, fake_result, monkeypatch
 ) -> None:
     """write_human_readable_report writes a markdown file in the cwd."""
-    import os
-
     from sanopy.cli.scan_handler import ScanReporter
 
     output = tmp_path / "out.json"
     reporter = ScanReporter([fake_result], tmp_path, output, ["testlinter"])
 
-    old_cwd = Path.cwd()
-    try:
-        os.chdir(tmp_path)
-        reporter.write_human_readable_report()
-    finally:
-        os.chdir(old_cwd)
+    monkeypatch.chdir(tmp_path)
+    reporter.write_human_readable_report()
 
     report = reporter.get_human_readable_path()
     assert report.exists()
