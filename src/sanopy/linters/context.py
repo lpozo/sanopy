@@ -6,6 +6,19 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+__all__ = [
+    "CONTENT_NOT_SUPPLIED",
+    "ContentArg",
+    "ContentCache",
+    "ProjectScanner",
+    "ProjectSummary",
+    "SnippetProvider",
+    "SourceAnalyzer",
+    "SymbolInfo",
+    "get_linter_context",
+    "read_file_content",
+]
+
 
 class _ContentNotSupplied:  # pylint: disable=too-few-public-methods
     """Sentinel type for an omitted ``content`` argument."""
@@ -55,18 +68,116 @@ def read_file_content(file_path: Path) -> str | None:
         return None
 
 
+class _ParsedFile:  # pylint: disable=too-few-public-methods
+    """A source file parsed once and indexed for context lookups.
+
+    Building the line-to-block index once per file turns semantic context
+    lookup from an AST walk per finding into a dictionary lookup, which
+    matters for files with many findings.
+    """
+
+    __slots__ = (
+        "_fallback_context",
+        "_line_context",
+        "_tree",
+        "content",
+        "lines",
+    )
+
+    def __init__(self, content: str) -> None:
+        self.content = content
+        self.lines = content.splitlines()
+        self._fallback_context: dict[int, tuple[int, str]] = {}
+        try:
+            self._tree: ast.AST | None = ast.parse(content)
+        except SyntaxError:
+            self._tree = None
+        self._line_context: dict[int, tuple[int, str]] = (
+            self._build_line_context(self._tree)
+            if self._tree is not None
+            else {}
+        )
+
+    @staticmethod
+    def _build_line_context(tree: ast.AST) -> dict[int, tuple[int, str]]:
+        """Map each line to its innermost function/class context.
+
+        ``ast.walk`` yields parents before children, so assigning every
+        line of each node in walk order leaves the innermost block in
+        place for nested definitions.
+        """
+        context: dict[int, tuple[int, str]] = {}
+        for node in ast.walk(tree):
+            if not isinstance(
+                node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
+            ):
+                continue
+            kind = "class" if isinstance(node, ast.ClassDef) else "def"
+            info = f"in {kind} {node.name}"
+            end = getattr(node, "end_lineno", node.lineno)
+            for line in range(node.lineno, end + 1):
+                context[line] = (node.lineno - 1, info)
+        return context
+
+    def extract(
+        self,
+        line_start: int,
+        line_end: int | None,
+        context_lines: int,
+    ) -> str:
+        """Extract a raw snippet using the already-split source lines."""
+        start_index = max(0, line_start - 1 - context_lines)
+        if line_end is None:
+            end_index = min(len(self.lines), line_start + context_lines)
+        else:
+            end_index = min(len(self.lines), line_end + context_lines)
+        return "\n".join(self.lines[start_index:end_index])
+
+    def find_context_bounds(self, line_start: int) -> tuple[int, str]:
+        """Return the semantic context for a line from the cached index."""
+        if self._tree is None:
+            return self._fallback(line_start)
+
+        context = self._line_context.get(line_start)
+        if context is not None:
+            return context
+        return max(0, line_start - 10), "in module scope"
+
+    def _fallback(self, line_start: int) -> tuple[int, str]:
+        """Find context by string search when the file is not valid AST."""
+        cached = self._fallback_context.get(line_start)
+        if cached is not None:
+            return cached
+
+        current_idx = line_start - 1
+        for i in range(current_idx, -1, -1):
+            if i >= len(self.lines):
+                continue
+            line = self.lines[i].strip()
+            if line.startswith(("def ", "class ")):
+                name = line.split("(")[0].split(":")[0].strip()
+                result = (i, f"in {name}")
+                break
+        else:
+            result = (max(0, current_idx - 10), "in module scope")
+
+        self._fallback_context[line_start] = result
+        return result
+
+
 class ContentCache:  # pylint: disable=too-few-public-methods
-    """Per-parse cache of file reads, including failed reads.
+    """Per-parse cache of file reads and parsed context indexes.
 
     ``get`` reads each path at most once: a file that is missing or not
-    valid UTF-8 is remembered as ``None``, so passing the result to
-    ``get_linter_context`` never re-attempts the read for later findings
-    in the same file.
+    valid UTF-8 is remembered as ``None``. ``get_parsed`` then parses the
+    content and builds its block index at most once, so later findings in
+    the same file only perform dictionary lookups.
     """
 
     def __init__(self) -> None:
         """Initialise an empty cache."""
         self._entries: dict[Path, str | None] = {}
+        self._parsed: dict[Path, _ParsedFile | None] = {}
 
     def get(self, file_path: Path) -> str | None:
         """Return the file's content, reading it at most once.
@@ -80,6 +191,22 @@ class ContentCache:  # pylint: disable=too-few-public-methods
         if file_path not in self._entries:
             self._entries[file_path] = read_file_content(file_path)
         return self._entries[file_path]
+
+    def get_parsed(self, file_path: Path) -> _ParsedFile | None:
+        """Return the parsed file, parsing it at most once.
+
+        Args:
+            file_path: Path to the target file.
+
+        Returns:
+            The parsed source, or None when the file is unreadable.
+        """
+        if file_path not in self._parsed:
+            content = self.get(file_path)
+            self._parsed[file_path] = (
+                _ParsedFile(content) if content is not None else None
+            )
+        return self._parsed[file_path]
 
 
 def _resolve_content(file_path: Path, content: ContentArg) -> str | None:
@@ -199,29 +326,7 @@ class SourceAnalyzer:
         if content is None:
             return 0, "unknown context"
 
-        try:
-            tree = ast.parse(content)
-            innermost_node = SourceAnalyzer._find_innermost_block(
-                tree, line_start
-            )
-
-            if isinstance(
-                innermost_node,
-                (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef),
-            ):
-                kind = (
-                    "class"
-                    if isinstance(innermost_node, ast.ClassDef)
-                    else "def"
-                )
-                return (
-                    innermost_node.lineno - 1,
-                    f"in {kind} {innermost_node.name}",
-                )
-
-            return max(0, line_start - 10), "in module scope"
-        except SyntaxError:
-            return SourceAnalyzer._fallback_search(line_start, content)
+        return _ParsedFile(content).find_context_bounds(line_start)
 
     @staticmethod
     def extract_symbols(
@@ -262,39 +367,6 @@ class SourceAnalyzer:
         except (OSError, UnicodeDecodeError, SyntaxError):
             pass
         return symbols[:10]
-
-    @staticmethod
-    def _find_innermost_block(
-        tree: ast.AST, line_start: int
-    ) -> ast.AST | None:
-        """Find the innermost function or class block containing the line."""
-        innermost_node = None
-        for node in ast.walk(tree):
-            if isinstance(
-                node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)
-            ):
-                start = node.lineno
-                end = getattr(node, "end_lineno", node.lineno)
-                if start <= line_start <= end and (
-                    innermost_node is None
-                    or node.lineno >= innermost_node.lineno
-                ):
-                    innermost_node = node
-        return innermost_node
-
-    @staticmethod
-    def _fallback_search(line_start: int, content: str) -> tuple[int, str]:
-        """Simple string-based search for context when AST fails."""
-        lines = content.splitlines()
-        current_idx = line_start - 1
-        for i in range(current_idx, -1, -1):
-            if i >= len(lines):
-                continue
-            line = lines[i].strip()
-            if line.startswith(("def ", "class ")):
-                name = line.split("(")[0].split(":")[0].strip()
-                return i, f"in {name}"
-        return max(0, current_idx - 10), "in module scope"
 
 
 class ProjectScanner:
@@ -352,6 +424,7 @@ def get_linter_context(
     line_end: int | None = None,
     context_lines: int = 10,
     content: ContentArg = CONTENT_NOT_SUPPLIED,
+    cache: ContentCache | None = None,
 ) -> tuple[str, int, str]:
     """Helper for linters to get snippet and context in one call.
 
@@ -362,10 +435,24 @@ def get_linter_context(
         context_lines: Number of surrounding lines to include.
         content: Pre-read file content to avoid re-reading the file.
             Omit to read the file; pass ``None`` when the file is already
-            known to be unreadable. Linters pass ``ContentCache.get(path)``
-            so each file is read at most once per parse, failed reads
-            included.
+            known to be unreadable.
+        cache: Per-parse cache. When supplied, each file is read, parsed,
+            and indexed at most once; later findings reuse the cached
+            index. Takes precedence over ``content``.
     """
+    if cache is not None:
+        parsed = cache.get_parsed(file_path)
+        if parsed is None:
+            return "", 1, "unknown context"
+        snippet_start_idx, semantic_info = parsed.find_context_bounds(
+            line_start
+        )
+        return (
+            parsed.extract(line_start, line_end, context_lines),
+            snippet_start_idx + 1,
+            semantic_info,
+        )
+
     snippet_start_idx, semantic_info = SourceAnalyzer.find_context_bounds(
         file_path, line_start, content=content
     )

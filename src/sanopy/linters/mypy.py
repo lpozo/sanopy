@@ -77,7 +77,7 @@ class MyPyLinter(BaseLinter):
                 line_start=line_start,
                 line_end=line_start,
                 context_lines=10,
-                content=content_cache.get(file_path),
+                cache=content_cache,
             )
 
             parsed_results.append(

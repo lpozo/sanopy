@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-25
+
+### Added
+
+- Added `docs/architecture.md`, a compact module/data-flow map for contributors and coding agents.
+
+### Changed
+
+- Semantic context extraction now parses each file once per linter parse and reuses a precomputed line-to-block index, instead of walking the AST once per finding. `get_linter_context` accepts an optional `cache` argument, and every context-using linter passes its per-parse `ContentCache`. In a local microbenchmark, 600 Ruff findings dropped from ~2.25s to ~0.007s.
+
 ## [0.3.0] - 2026-11-25
 
 ### Fixed

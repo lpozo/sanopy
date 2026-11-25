@@ -363,4 +363,5 @@ uv run radon cc -n C src tests -s    # complexity
 uv run sanopy scan src tests         # dogfood: must report 0 findings
 ```
 
-See [AGENTS.md](AGENTS.md) for architecture notes and repo conventions.
+See [AGENTS.md](AGENTS.md) for repo conventions and
+[docs/architecture.md](docs/architecture.md) for the module and data-flow map.

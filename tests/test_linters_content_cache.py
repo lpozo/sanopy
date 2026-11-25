@@ -1,8 +1,8 @@
 """Cross-linter tests for per-file content caching in parse_output.
 
 The per-linter suites cover parsing; this module covers the shared
-contract that every context-using linter reads each file at most once
-per parse, reusing that content for every finding in the file.
+contract that every context-using linter reads, parses, and indexes each
+file at most once per parse, reusing it for every finding in the file.
 """
 
 import json
@@ -143,10 +143,10 @@ async def test_linter_reuses_content_per_file(
     )
     mocker.patch.object(linter_cls, "_run_command", return_value=mock_result)
 
-    calls: list[str | None] = []
+    caches: list[object] = []
 
     def _capture(**kwargs):
-        calls.append(kwargs.get("content"))
+        caches.append(kwargs.get("cache"))
         return ("snippet", 1, "context")
 
     module = linter_cls.__module__.rsplit(".", 1)[-1]
@@ -158,7 +158,8 @@ async def test_linter_reuses_content_per_file(
     results = await linter.run(src)
 
     assert len(results) == 2
-    assert calls == [CONTENT, CONTENT]
+    assert caches[0] is not None
+    assert caches[0] is caches[1]
 
 
 @pytest.mark.asyncio
