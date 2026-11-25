@@ -1,5 +1,8 @@
 """Tests for the configuration system."""
 
+import os
+import stat
+
 import pytest
 
 from sanopy.config import (
@@ -99,6 +102,29 @@ def test_config_save_is_atomic_and_leaves_no_temp_files(tmp_path) -> None:
     loaded = Config.load(config_file)
     assert loaded.only_linters == ["ruff"]
     assert [p.name for p in tmp_path.iterdir()] == ["sanopy.toml"]
+
+
+def test_config_save_preserves_existing_file_mode(tmp_path) -> None:
+    """Overwriting an existing config keeps its permission bits."""
+    config_file = tmp_path / "sanopy.toml"
+    config_file.write_text("old", encoding="utf-8")
+    config_file.chmod(0o644)
+
+    Config(only_linters=["ruff"]).save(config_file)
+
+    assert stat.S_IMODE(config_file.stat().st_mode) == 0o644
+
+
+def test_config_save_new_file_uses_umask_not_mkstemp_mode(tmp_path) -> None:
+    """A newly created config honors the umask, not mkstemp's 0600."""
+    old_umask = os.umask(0o022)
+    try:
+        config_file = tmp_path / "sanopy.toml"
+        Config(only_linters=["ruff"]).save(config_file)
+    finally:
+        os.umask(old_umask)
+
+    assert stat.S_IMODE(config_file.stat().st_mode) == 0o644
 
 
 def test_config_save_cleans_temp_on_failure(tmp_path) -> None:

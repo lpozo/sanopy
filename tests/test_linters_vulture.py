@@ -92,35 +92,3 @@ def test_vulture_build_command_starts_with_package_name(tmp_path) -> None:
     cmd = VultureLinter().build_command(target)
 
     assert cmd[0] == VultureLinter.package_name
-
-
-@pytest.mark.asyncio
-async def test_vulture_reuses_content_per_file(
-    mocker, linter, tmp_path
-) -> None:
-    """Vulture reuses one read of file content across multiple findings."""
-    src = tmp_path / "target"
-    src.mkdir()
-    mod = src / "mod.py"
-    mod.write_text("x = 1\n", encoding="utf-8")
-
-    stdout = f"{mod}:1: unused function 'foo'\n{mod}:2: unused class 'Bar'\n"
-    mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
-    mocker.patch.object(
-        VultureLinter, "_run_command", return_value=mock_result
-    )
-    context_calls = []
-
-    def _capture_content(**kwargs):
-        context_calls.append(kwargs.get("content"))
-        return ("snippet", 1, "context")
-
-    mocker.patch(
-        "sanopy.linters.vulture.get_linter_context",
-        side_effect=_capture_content,
-    )
-
-    results = await linter.run(src)
-
-    assert len(results) == 2
-    assert context_calls == ["x = 1\n", "x = 1\n"]

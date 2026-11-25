@@ -119,50 +119,30 @@ async def test_pylint_parses_fields(mocker, linter) -> None:
 
 
 @pytest.mark.asyncio
-async def test_pylint_reuses_content_per_file(
-    mocker, linter, tmp_path
+async def test_pylint_prefers_native_type_over_message_id_prefix(
+    mocker, linter
 ) -> None:
-    """Pylint reuses one read of file content across multiple findings."""
-    src = tmp_path / "target"
-    src.mkdir()
-    mod = src / "mod.py"
-    mod.write_text("x = 1\n", encoding="utf-8")
-
+    """The native `type` field wins over the message-id prefix fallback."""
     stdout = json.dumps(
         [
             {
                 "line": 1,
                 "column": 1,
-                "path": str(mod),
-                "message": "msg 1",
+                "path": "mod.py",
+                "message": "custom",
+                # E-prefixed id would fall back to "error"; the native
+                # type must take precedence.
                 "message-id": "E0001",
-            },
-            {
-                "line": 2,
-                "column": 1,
-                "path": str(mod),
-                "message": "msg 2",
-                "message-id": "E0001",
-            },
+                "type": "warning",
+            }
         ]
     )
     mock_result = AsyncCompletedProcess(stdout=stdout, stderr="", returncode=0)
     mocker.patch.object(PylintLinter, "_run_command", return_value=mock_result)
-    context_calls = []
 
-    def _capture_content(**kwargs):
-        context_calls.append(kwargs.get("content"))
-        return ("snippet", 1, "context")
+    results = await linter.run(Path("target.py"))
 
-    mocker.patch(
-        "sanopy.linters.pylint.get_linter_context",
-        side_effect=_capture_content,
-    )
-
-    results = await linter.run(src)
-
-    assert len(results) == 2
-    assert context_calls == ["x = 1\n", "x = 1\n"]
+    assert results[0].raw_severity == "warning"
 
 
 @pytest.mark.parametrize("config_present", [False, True])

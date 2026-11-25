@@ -7,7 +7,6 @@ from collections.abc import Callable
 from pathlib import Path
 
 from sanopy.linters.base import BaseLinter
-from sanopy.linters.config_discovery import cleanup_materialized_configs
 from sanopy.linters.result import LinterResult
 
 logger = logging.getLogger(__name__)
@@ -79,7 +78,10 @@ class Engine:
                     progress_callback()
 
         # The temp config files each linter materialized in build_command
-        # were consumed by the subprocesses above; now they can be removed.
-        cleanup_materialized_configs()
+        # were consumed by the subprocesses above; each linter now removes
+        # only the directories it created, so a concurrent scan's configs
+        # are never deleted out from under it.
+        for linter in self.linters:
+            linter.cleanup_temp_configs()
 
         return all_results

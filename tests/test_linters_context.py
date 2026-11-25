@@ -4,7 +4,10 @@ from pathlib import Path
 
 import pytest
 
+from sanopy.linters import context as context_module
 from sanopy.linters.context import (
+    CONTENT_NOT_SUPPLIED,
+    ContentCache,
     ProjectScanner,
     SnippetProvider,
     SourceAnalyzer,
@@ -98,6 +101,52 @@ def test_snippet_provider_extract_uses_provided_content(tmp_path) -> None:
     )
 
     assert snippet == "caller content"
+
+
+def test_explicit_none_content_skips_the_disk(tmp_path, mocker) -> None:
+    """content=None means known-unreadable and must never touch the file."""
+    test_file = _write(tmp_path, "test.py", "x = 1\n")
+    spy = mocker.spy(context_module, "read_file_content")
+
+    assert SnippetProvider.extract(test_file, 1, content=None) == ""
+    assert SourceAnalyzer.find_context_bounds(test_file, 1, content=None) == (
+        0,
+        "unknown context",
+    )
+    raw, start, info = get_linter_context(test_file, 1, content=None)
+    assert raw == ""
+    assert start == 1
+    assert info == "unknown context"
+    spy.assert_not_called()
+
+
+def test_sentinel_content_reads_once(tmp_path, mocker) -> None:
+    """The default sentinel triggers a single read of the file."""
+    test_file = _write(tmp_path, "test.py", "def foo():\n    pass\n")
+    spy = mocker.spy(context_module, "read_file_content")
+
+    snippet = SnippetProvider.extract(
+        test_file, 2, content=CONTENT_NOT_SUPPLIED
+    )
+
+    assert snippet == "def foo():\n    pass"
+    spy.assert_called_once_with(test_file)
+
+
+def test_content_cache_reads_once_and_caches_misses(tmp_path, mocker) -> None:
+    """ContentCache reads each path at most once, misses included."""
+    test_file = _write(tmp_path, "test.py", "x = 1\n")
+    missing = tmp_path / "missing.py"
+    spy = mocker.spy(context_module, "read_file_content")
+    cache = ContentCache()
+
+    assert cache.get(test_file) == "x = 1\n"
+    assert cache.get(test_file) == "x = 1\n"
+    assert len(spy.call_args_list) == 1
+
+    assert cache.get(missing) is None
+    assert cache.get(missing) is None
+    assert len(spy.call_args_list) == 2
 
 
 @pytest.mark.parametrize(

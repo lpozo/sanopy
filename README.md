@@ -110,7 +110,7 @@ severity fields:
   "linter": {
     "name": "Semgrep",
     "rule_id": "python.lang.security.audit.eval-used",
-    "raw_severity": "WARNING",
+    "raw_severity": "warning",
     "normalized_severity": "warning"
   },
   "location": {
@@ -259,6 +259,8 @@ The `.sanopy.toml` file controls linter defaults for the current project.
 - Manual workflow: run `sanopy init` and answer prompts.
 - CI/AI workflow: run `sanopy init --only ... --skip ...` in scripts.
 - The file is required — `sanopy scan` exits `2` if it is missing.
+- `sanopy init` writes it atomically and preserves its existing permissions
+  (or applies the process umask when creating it).
 - Diagnostics (missing config, missing linters, scan failures) go to
   stderr, so stdout stays a valid JSON document in machine mode.
 

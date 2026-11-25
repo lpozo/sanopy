@@ -85,17 +85,33 @@ def materialize_linter_config(
     return path
 
 
-def cleanup_materialized_configs() -> int:
-    """Remove every temporary directory created during materialization.
+def cleanup_materialized_configs(
+    config_dirs: set[Path] | None = None,
+) -> int:
+    """Remove temporary directories created during materialization.
 
-    Safe to call repeatedly: directories already removed are ignored.
+    With no argument every tracked directory is removed. Pass a specific
+    set of directories (e.g. the ones a single linter instance created)
+    to remove only those — required when scans run concurrently, since a
+    blanket cleanup would delete temp configs another scan's linters are
+    still reading. The passed set is not modified. Safe to call repeatedly:
+    directories already removed are ignored.
+
+    Args:
+        config_dirs: Specific directories to remove. Defaults to every
+            tracked directory.
 
     Returns:
         The number of directories removed.
     """
+    targets = (
+        set(_materialized_config_dirs)
+        if config_dirs is None
+        else set(config_dirs)
+    )
     removed = 0
-    while _materialized_config_dirs:
-        config_dir = _materialized_config_dirs.pop()
+    for config_dir in targets:
+        _materialized_config_dirs.discard(config_dir)
         try:
             config_dir.unlink()
             removed += 1
