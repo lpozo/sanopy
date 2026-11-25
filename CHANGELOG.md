@@ -6,6 +6,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-25
+
 ### Fixed
 
 - `Config.save()` now writes the config file atomically: the TOML content is written to a temporary file in the destination directory and renamed over the target. A crash mid-write no longer leaves a truncated or half-written `.sanopy.toml` behind.
