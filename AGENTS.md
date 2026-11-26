@@ -1,12 +1,12 @@
 # AGENTS.md
 
-Sanopy is a Python 3.12 CLI that runs many linters concurrently and emits findings as versioned JSON. Built with `uv`; managed with `hatchling`. The repo dogfoods itself: `sanopy scan src tests` must report **0 findings**.
+Sanopy is a Python 3.12 CLI that runs many linters concurrently and emits findings as versioned JSON. Built with `uv`; managed with `hatchling`. The repo dogfoods itself: `sanopy scan src tests --skip safety,pip-audit` must report **0 findings**.
 
 **Scope.** Linter orchestration and reporting only — there is no AI provider, model, or auto-fix pipeline, and the only commands are `init` and `scan`. A `fix` command and AI/provider settings were deliberately removed; do not reintroduce them or anything equivalent unless explicitly asked.
 
 ## Commands
 
-All commands run through `uv run`. CI only runs `ruff check`, `ruff format --check`, and `pytest` — mypy/pyright/radon/self-scan are local-only and must be run manually.
+All commands run through `uv run`. CI runs `ruff check`, `ruff format --check`, `pytest`, and a separate `Sanopy Self-Scan` workflow that installs the latest published Sanopy from PyPI and scans `src tests --skip safety,pip-audit`. Direct `mypy`/`pyright`/`radon` invocations and the full dependency audit remain local/manual.
 
 ```bash
 uv run pytest                                # full suite
